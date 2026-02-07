@@ -1,0 +1,11 @@
+[project]
+name = "jdyxk-mcp-server"
+version = "0.1.0"
+description = "MCP Server for Kingdee K3Cloud ERP"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "kingdee-cdp-webapi-sdk>=8.2.0",
+    "mcp[cli]>=1.26.0",
+    "python-dotenv>=1.2.1",
+]
