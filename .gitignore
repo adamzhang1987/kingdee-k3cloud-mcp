@@ -1,8 +1,11 @@
-# 金蝶 SDK（开发参考用，已在 PyPI 发布）
-SDK_Python3.0_V8.2.0/
-
 # Claude Code 本地配置
 .claude/
 
 # macOS
 .DS_Store
+
+# IDE
+.idea/
+
+# Python
+__pycache__/
