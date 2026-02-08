@@ -18,8 +18,37 @@ api_sdk.InitConfig(
     app_secret=os.getenv("KD_APP_SEC", ""),
     server_url=server_url,
     lcid=int(os.getenv("KD_LCID", "2052")),
-    org_num=os.getenv("KD_ORG_NUM", ""),
+    org_num=int(os.getenv("KD_ORG_NUM", "0") or "0"),
 )
+
+SESSION_LOST_MSG = "会话信息已丢失，请重新登录"
+
+
+def _is_session_lost(result_json: dict) -> bool:
+    """判断金蝶返回是否为会话丢失错误。"""
+    try:
+        status = result_json.get("Result", {}).get("ResponseStatus", {})
+        if not status.get("IsSuccess", True):
+            for err in status.get("Errors") or []:
+                if SESSION_LOST_MSG in (err.get("Message") or ""):
+                    return True
+    except (TypeError, AttributeError, KeyError):
+        pass
+    return False
+
+
+def _call_with_session_retry(callable_fn):
+    """执行一次 SDK 调用；若返回会话丢失则清空会话并重试一次。"""
+    result = callable_fn()
+    try:
+        data = json.loads(result)
+    except json.JSONDecodeError:
+        return result
+    if not _is_session_lost(data):
+        return result
+    api_sdk.cookiesStore.SID = ""
+    api_sdk.cookiesStore.cookies.clear()
+    return callable_fn()
 
 
 @mcp.tool()
@@ -46,7 +75,7 @@ def query_bill(
         start_row: 起始行号，默认0
         limit: 最大行数限制，默认2000
     """
-    result = api_sdk.ExecuteBillQuery(
+    return _call_with_session_retry(lambda: api_sdk.ExecuteBillQuery(
         {
             "FormId": form_id,
             "FieldKeys": field_keys,
@@ -56,8 +85,7 @@ def query_bill(
             "StartRow": start_row,
             "Limit": limit,
         }
-    )
-    return result
+    ))
 
 
 @mcp.tool()
@@ -86,7 +114,7 @@ def query_bill_json(
         start_row: 起始行号，默认0
         limit: 最大行数限制，默认2000
     """
-    result = api_sdk.BillQuery(
+    return _call_with_session_retry(lambda: api_sdk.BillQuery(
         {
             "FormId": form_id,
             "FieldKeys": field_keys,
@@ -96,8 +124,7 @@ def query_bill_json(
             "StartRow": start_row,
             "Limit": limit,
         }
-    )
-    return result
+    ))
 
 
 @mcp.tool()
@@ -116,8 +143,7 @@ def view_bill(
         id: 单据内码ID（number 和 id 二选一）
     """
     data = {"CreateOrgId": 0, "Number": number, "Id": id, "IsSortBySeq": "false"}
-    result = api_sdk.View(form_id, data)
-    return result
+    return _call_with_session_retry(lambda: api_sdk.View(form_id, data))
 
 
 @mcp.tool()
@@ -133,8 +159,7 @@ def save_bill(form_id: str, model_data: str) -> str:
     data = json.loads(model_data)
     if "Model" not in data:
         data = {"Model": data}
-    result = api_sdk.Save(form_id, data)
-    return result
+    return _call_with_session_retry(lambda: api_sdk.Save(form_id, data))
 
 
 @mcp.tool()
@@ -155,8 +180,7 @@ def submit_bill(
         "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
         "Ids": ids,
     }
-    result = api_sdk.Submit(form_id, data)
-    return result
+    return _call_with_session_retry(lambda: api_sdk.Submit(form_id, data))
 
 
 @mcp.tool()
@@ -177,8 +201,7 @@ def audit_bill(
         "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
         "Ids": ids,
     }
-    result = api_sdk.Audit(form_id, data)
-    return result
+    return _call_with_session_retry(lambda: api_sdk.Audit(form_id, data))
 
 
 @mcp.tool()
@@ -199,8 +222,7 @@ def unaudit_bill(
         "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
         "Ids": ids,
     }
-    result = api_sdk.UnAudit(form_id, data)
-    return result
+    return _call_with_session_retry(lambda: api_sdk.UnAudit(form_id, data))
 
 
 @mcp.tool()
@@ -221,8 +243,7 @@ def delete_bill(
         "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
         "Ids": ids,
     }
-    result = api_sdk.Delete(form_id, data)
-    return result
+    return _call_with_session_retry(lambda: api_sdk.Delete(form_id, data))
 
 
 @mcp.tool()
@@ -245,8 +266,7 @@ def execute_operation(
         "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
         "Ids": ids,
     }
-    result = api_sdk.ExcuteOperation(form_id, op_number, data)
-    return result
+    return _call_with_session_retry(lambda: api_sdk.ExcuteOperation(form_id, op_number, data))
 
 
 if __name__ == "__main__":

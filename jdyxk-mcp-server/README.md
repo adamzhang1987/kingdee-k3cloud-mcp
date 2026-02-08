@@ -120,9 +120,17 @@ uv --directory /path/to/jdyxk-mcp-server run server.py
 
 所有工具通过 `form_id` 参数支持金蝶的各类表单（物料、客户、销售订单、采购订单等），无需为每种表单单独配置。
 
-## 调试
+## 故障排查
 
-使用 MCP Inspector 可视化调试：
+### 「会话信息已丢失，请重新登录」(ErrorCode 500)
+
+**原因**：金蝶服务端会为每次连接建立会话（Session），会话在空闲一段时间后过期。通过 Claude Desktop 调用时，MCP 进程常驻，首次请求会建立会话；若之后长时间未再调用，再发起请求时携带的旧会话已失效，就会返回该错误。
+
+**本 server 已做处理**：检测到该错误时会自动清空本地会话并重试一次（不带旧会话的请求会触发服务端建立新会话），多数情况下无需人工干预。若仍报错，可重启 Claude Desktop（或重启 MCP 进程）后重试。
+
+**建议**：确认 `KD_SERVER_URL`、`KD_ACCT_ID`、`KD_USERNAME`、`KD_APP_ID`、`KD_APP_SEC` 与金蝶「第三方系统登录授权」中配置一致。
+
+## 调试
 
 ```bash
 cd /path/to/jdyxk-mcp-server
