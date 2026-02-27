@@ -1,5 +1,6 @@
 import os
 import json
+import functools
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
@@ -21,8 +22,24 @@ api_sdk.InitConfig(
     org_num=int(os.getenv("KD_ORG_NUM", "0") or "0"),
 )
 
+SESSION_LOST_MSG = "会话信息已丢失"
+
+
+def auto_retry_on_session_lost(func):
+    """Retry once with cleared cookies when K3Cloud session expires."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)
+        if isinstance(result, str) and SESSION_LOST_MSG in result:
+            api_sdk.cookiesStore.SID = ""
+            api_sdk.cookiesStore.cookies.clear()
+            result = func(*args, **kwargs)
+        return result
+    return wrapper
+
 
 @mcp.tool()
+@auto_retry_on_session_lost
 def query_bill(
     form_id: str,
     field_keys: str,
@@ -61,6 +78,7 @@ def query_bill(
 
 
 @mcp.tool()
+@auto_retry_on_session_lost
 def query_bill_json(
     form_id: str,
     field_keys: str,
@@ -101,6 +119,7 @@ def query_bill_json(
 
 
 @mcp.tool()
+@auto_retry_on_session_lost
 def view_bill(
     form_id: str,
     number: str = "",
@@ -121,6 +140,7 @@ def view_bill(
 
 
 @mcp.tool()
+@auto_retry_on_session_lost
 def save_bill(form_id: str, model_data: str) -> str:
     """保存金蝶云星空单据（新增或更新）。
 
@@ -138,6 +158,7 @@ def save_bill(form_id: str, model_data: str) -> str:
 
 
 @mcp.tool()
+@auto_retry_on_session_lost
 def submit_bill(
     form_id: str,
     numbers: str = "",
@@ -160,6 +181,7 @@ def submit_bill(
 
 
 @mcp.tool()
+@auto_retry_on_session_lost
 def audit_bill(
     form_id: str,
     numbers: str = "",
@@ -182,6 +204,7 @@ def audit_bill(
 
 
 @mcp.tool()
+@auto_retry_on_session_lost
 def unaudit_bill(
     form_id: str,
     numbers: str = "",
@@ -204,6 +227,7 @@ def unaudit_bill(
 
 
 @mcp.tool()
+@auto_retry_on_session_lost
 def delete_bill(
     form_id: str,
     numbers: str = "",
@@ -226,6 +250,7 @@ def delete_bill(
 
 
 @mcp.tool()
+@auto_retry_on_session_lost
 def execute_operation(
     form_id: str,
     op_number: str,
