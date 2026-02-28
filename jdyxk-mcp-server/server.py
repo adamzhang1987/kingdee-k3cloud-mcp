@@ -1,11 +1,11 @@
 import os
 import sys
 import json
-import functools
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from k3cloud_webapi_sdk.main import K3CloudApiSdk
+from k3cloud_webapi_sdk.const.const_define import InvokeMethod
 
 load_dotenv()
 
@@ -16,8 +16,24 @@ if _missing_env:
 
 mcp = FastMCP("kingdee-k3cloud")
 
+SESSION_LOST_MSG = "会话信息已丢失"
+
+
+class RetryableK3CloudApiSdk(K3CloudApiSdk):
+    """K3CloudApiSdk with automatic session recovery on expiry."""
+
+    def Execute(self, service_name, json_data=None, invoke_type=InvokeMethod.SYNC):
+        result = super().Execute(service_name, json_data, invoke_type)
+        if isinstance(result, str) and SESSION_LOST_MSG in result:
+            print("[k3cloud] session expired, resetting and retrying...", file=sys.stderr)
+            self.cookiesStore.SID = ""
+            self.cookiesStore.cookies.clear()
+            result = super().Execute(service_name, json_data, invoke_type)
+        return result
+
+
 server_url = os.getenv("KD_SERVER_URL", "")
-api_sdk = K3CloudApiSdk(server_url)
+api_sdk = RetryableK3CloudApiSdk(server_url)
 api_sdk.InitConfig(
     acct_id=os.getenv("KD_ACCT_ID", ""),
     user_name=os.getenv("KD_USERNAME", ""),
@@ -28,14 +44,6 @@ api_sdk.InitConfig(
     org_num=int(os.getenv("KD_ORG_NUM", "0") or "0"),
 )
 
-SESSION_LOST_MSG = "会话信息已丢失"
-
-
-def _reset_session():
-    """Clear all cached session state so the next call re-authenticates via HMAC."""
-    api_sdk.cookiesStore.SID = ""
-    api_sdk.cookiesStore.cookies.clear()
-
 
 def _ids_data(numbers: str, ids: str) -> dict:
     return {
@@ -45,23 +53,7 @@ def _ids_data(numbers: str, ids: str) -> dict:
     }
 
 
-def auto_retry_on_session_lost(func):
-    """Retry up to 2 times with cleared session when K3Cloud session expires."""
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        result = func(*args, **kwargs)
-        for attempt in range(1, 3):
-            if not (isinstance(result, str) and SESSION_LOST_MSG in result):
-                break
-            print(f"[{func.__name__}] session expired, resetting and retrying (attempt {attempt})...", file=sys.stderr)
-            _reset_session()
-            result = func(*args, **kwargs)
-        return result
-    return wrapper
-
-
 @mcp.tool()
-@auto_retry_on_session_lost
 def query_bill(
     form_id: str,
     field_keys: str,
@@ -85,7 +77,7 @@ def query_bill(
         start_row: 起始行号，默认0
         limit: 最大行数限制，默认2000
     """
-    result = api_sdk.ExecuteBillQuery(
+    return api_sdk.ExecuteBillQuery(
         {
             "FormId": form_id,
             "FieldKeys": field_keys,
@@ -96,11 +88,9 @@ def query_bill(
             "Limit": limit,
         }
     )
-    return result
 
 
 @mcp.tool()
-@auto_retry_on_session_lost
 def query_bill_json(
     form_id: str,
     field_keys: str,
@@ -126,7 +116,7 @@ def query_bill_json(
         start_row: 起始行号，默认0
         limit: 最大行数限制，默认2000
     """
-    result = api_sdk.BillQuery(
+    return api_sdk.BillQuery(
         {
             "FormId": form_id,
             "FieldKeys": field_keys,
@@ -137,11 +127,9 @@ def query_bill_json(
             "Limit": limit,
         }
     )
-    return result
 
 
 @mcp.tool()
-@auto_retry_on_session_lost
 def view_bill(
     form_id: str,
     number: str = "",
@@ -157,12 +145,10 @@ def view_bill(
         bill_id: 单据内码ID（number 和 bill_id 二选一）
     """
     data = {"CreateOrgId": 0, "Number": number, "Id": bill_id, "IsSortBySeq": "false"}
-    result = api_sdk.View(form_id, data)
-    return result
+    return api_sdk.View(form_id, data)
 
 
 @mcp.tool()
-@auto_retry_on_session_lost
 def save_bill(form_id: str, model_data: str) -> str:
     """保存金蝶云星空单据（新增或更新）。
 
@@ -178,12 +164,10 @@ def save_bill(form_id: str, model_data: str) -> str:
         return json.dumps({"error": f"Invalid JSON in model_data: {e}"})
     if "Model" not in data:
         data = {"Model": data}
-    result = api_sdk.Save(form_id, data)
-    return result
+    return api_sdk.Save(form_id, data)
 
 
 @mcp.tool()
-@auto_retry_on_session_lost
 def submit_bill(
     form_id: str,
     numbers: str = "",
@@ -196,12 +180,10 @@ def submit_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
-    result = api_sdk.Submit(form_id, _ids_data(numbers, ids))
-    return result
+    return api_sdk.Submit(form_id, _ids_data(numbers, ids))
 
 
 @mcp.tool()
-@auto_retry_on_session_lost
 def audit_bill(
     form_id: str,
     numbers: str = "",
@@ -214,12 +196,10 @@ def audit_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
-    result = api_sdk.Audit(form_id, _ids_data(numbers, ids))
-    return result
+    return api_sdk.Audit(form_id, _ids_data(numbers, ids))
 
 
 @mcp.tool()
-@auto_retry_on_session_lost
 def unaudit_bill(
     form_id: str,
     numbers: str = "",
@@ -232,12 +212,10 @@ def unaudit_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
-    result = api_sdk.UnAudit(form_id, _ids_data(numbers, ids))
-    return result
+    return api_sdk.UnAudit(form_id, _ids_data(numbers, ids))
 
 
 @mcp.tool()
-@auto_retry_on_session_lost
 def delete_bill(
     form_id: str,
     numbers: str = "",
@@ -250,12 +228,10 @@ def delete_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
-    result = api_sdk.Delete(form_id, _ids_data(numbers, ids))
-    return result
+    return api_sdk.Delete(form_id, _ids_data(numbers, ids))
 
 
 @mcp.tool()
-@auto_retry_on_session_lost
 def execute_operation(
     form_id: str,
     op_number: str,
@@ -270,8 +246,7 @@ def execute_operation(
         numbers: 单据编号，多个用逗号分隔
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
-    result = api_sdk.ExcuteOperation(form_id, op_number, _ids_data(numbers, ids))
-    return result
+    return api_sdk.ExcuteOperation(form_id, op_number, _ids_data(numbers, ids))
 
 
 if __name__ == "__main__":
