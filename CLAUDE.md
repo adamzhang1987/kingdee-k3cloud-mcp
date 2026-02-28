@@ -25,7 +25,7 @@ jdyxk-mcp-server/                          # 仓库根目录 / 工作目录
 - `InitConfig` 的参数名为 `app_secret`（不是 `app_sec`），环境变量名用 `KD_APP_SEC` 是为了简短
 - 所有 SDK 方法返回 JSON 字符串，需要 `json.loads()` 解析
 - SDK 方法名有拼写不一致：`ExcuteOperation`（少了个 e），这是 SDK 本身的命名
-- 会话过期时 SDK 返回含「会话信息已丢失」的字符串；使用 `auto_retry_on_session_lost` 装饰器自动清除 Cookie 并重试一次
+- 会话过期时 SDK 返回含「会话信息已丢失」的字符串；`RetryableK3CloudApiSdk` 在 `Execute()` 层拦截并自动清除 `cookiesStore`（SID + cookies）重试一次。注意：重试必须在 SDK 层（`Execute` 覆写）实现，不能用工具层装饰器——FastMCP 会通过 `inspect.unwrap` 绕过装饰器直接调用原函数
 
 ## 9 个工具与金蝶接口对应关系
 
@@ -75,7 +75,7 @@ jdyxk-mcp-server/                          # 仓库根目录 / 工作目录
 
 **参数设计** — `numbers` 用逗号分隔字符串（降低 LLM 调用难度）；`model_data` 用 JSON 字符串传递，自动补充 `Model` 包装层；所有工具直接返回 SDK 原始 JSON
 
-**会话自动重试** — `auto_retry_on_session_lost` 装饰器应用于所有工具：检测到「会话信息已丢失」时清除 `cookiesStore`（SID + cookies）并重试一次，无需手动重启服务
+**会话自动重试** — `RetryableK3CloudApiSdk` 子类覆写 `Execute()`：检测到「会话信息已丢失」时清除 `cookiesStore`（SID + cookies）并重试一次，无需手动重启服务。装饰器方案不可靠，因为 FastMCP 会通过 `inspect.unwrap` 绕过装饰器
 
 ## 运行与调试
 
