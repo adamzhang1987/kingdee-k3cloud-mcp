@@ -19,12 +19,24 @@ mcp = FastMCP("kingdee-k3cloud")
 SESSION_LOST_MSG = "会话信息已丢失"
 
 
+def _is_session_expired(result: str) -> bool:
+    """Check for session expiry in both plain-text and unicode-escaped JSON."""
+    if SESSION_LOST_MSG in result:
+        return True
+    try:
+        data = json.loads(result)
+        errors = (data.get("Result") or {}).get("ResponseStatus", {}).get("Errors", [])
+        return any(SESSION_LOST_MSG in (e.get("Message") or "") for e in errors)
+    except Exception:
+        return False
+
+
 class RetryableK3CloudApiSdk(K3CloudApiSdk):
     """K3CloudApiSdk with automatic session recovery on expiry."""
 
     def Execute(self, service_name, json_data=None, invoke_type=InvokeMethod.SYNC):
         result = super().Execute(service_name, json_data, invoke_type)
-        if isinstance(result, str) and SESSION_LOST_MSG in result:
+        if isinstance(result, str) and _is_session_expired(result):
             print("[k3cloud] session expired, resetting and retrying...", file=sys.stderr)
             self.cookiesStore.SID = ""
             self.cookiesStore.cookies.clear()
