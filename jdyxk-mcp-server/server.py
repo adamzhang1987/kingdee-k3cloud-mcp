@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import functools
 
@@ -7,6 +8,11 @@ from mcp.server.fastmcp import FastMCP
 from k3cloud_webapi_sdk.main import K3CloudApiSdk
 
 load_dotenv()
+
+_required_env = ["KD_SERVER_URL", "KD_ACCT_ID", "KD_USERNAME", "KD_APP_ID", "KD_APP_SEC"]
+_missing_env = [k for k in _required_env if not os.getenv(k)]
+if _missing_env:
+    raise RuntimeError(f"Missing required env vars: {', '.join(_missing_env)}")
 
 mcp = FastMCP("kingdee-k3cloud")
 
@@ -25,14 +31,30 @@ api_sdk.InitConfig(
 SESSION_LOST_MSG = "会话信息已丢失"
 
 
+def _reset_session():
+    """Clear all cached session state so the next call re-authenticates via HMAC."""
+    api_sdk.cookiesStore.SID = ""
+    api_sdk.cookiesStore.cookies.clear()
+
+
+def _ids_data(numbers: str, ids: str) -> dict:
+    return {
+        "CreateOrgId": 0,
+        "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
+        "Ids": [i.strip() for i in ids.split(",") if i.strip()] if ids else [],
+    }
+
+
 def auto_retry_on_session_lost(func):
-    """Retry once with cleared cookies when K3Cloud session expires."""
+    """Retry up to 2 times with cleared session when K3Cloud session expires."""
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)
-        if isinstance(result, str) and SESSION_LOST_MSG in result:
-            api_sdk.cookiesStore.SID = ""
-            api_sdk.cookiesStore.cookies.clear()
+        for attempt in range(1, 3):
+            if not (isinstance(result, str) and SESSION_LOST_MSG in result):
+                break
+            print(f"[{func.__name__}] session expired, resetting and retrying (attempt {attempt})...", file=sys.stderr)
+            _reset_session()
             result = func(*args, **kwargs)
         return result
     return wrapper
@@ -123,7 +145,7 @@ def query_bill_json(
 def view_bill(
     form_id: str,
     number: str = "",
-    id: str = "",
+    bill_id: str = "",
 ) -> str:
     """查看金蝶云星空单条记录的完整详情。
 
@@ -131,10 +153,10 @@ def view_bill(
 
     Args:
         form_id: 表单ID。如 BD_MATERIAL、SAL_SaleOrder 等
-        number: 单据编号。如 "MATERIAL001"（number 和 id 二选一）
-        id: 单据内码ID（number 和 id 二选一）
+        number: 单据编号。如 "MATERIAL001"（number 和 bill_id 二选一）
+        bill_id: 单据内码ID（number 和 bill_id 二选一）
     """
-    data = {"CreateOrgId": 0, "Number": number, "Id": id, "IsSortBySeq": "false"}
+    data = {"CreateOrgId": 0, "Number": number, "Id": bill_id, "IsSortBySeq": "false"}
     result = api_sdk.View(form_id, data)
     return result
 
@@ -150,7 +172,10 @@ def save_bill(form_id: str, model_data: str) -> str:
             {"Model": {"FCreateOrgId": {"FNumber": "100"}, "FNumber": "MAT001", "FName": "物料名称"}}
             如果传入的JSON中没有"Model"键，会自动包装。
     """
-    data = json.loads(model_data)
+    try:
+        data = json.loads(model_data)
+    except json.JSONDecodeError as e:
+        return json.dumps({"error": f"Invalid JSON in model_data: {e}"})
     if "Model" not in data:
         data = {"Model": data}
     result = api_sdk.Save(form_id, data)
@@ -171,12 +196,7 @@ def submit_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
-    data = {
-        "CreateOrgId": 0,
-        "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
-        "Ids": ids,
-    }
-    result = api_sdk.Submit(form_id, data)
+    result = api_sdk.Submit(form_id, _ids_data(numbers, ids))
     return result
 
 
@@ -194,12 +214,7 @@ def audit_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
-    data = {
-        "CreateOrgId": 0,
-        "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
-        "Ids": ids,
-    }
-    result = api_sdk.Audit(form_id, data)
+    result = api_sdk.Audit(form_id, _ids_data(numbers, ids))
     return result
 
 
@@ -217,12 +232,7 @@ def unaudit_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
-    data = {
-        "CreateOrgId": 0,
-        "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
-        "Ids": ids,
-    }
-    result = api_sdk.UnAudit(form_id, data)
+    result = api_sdk.UnAudit(form_id, _ids_data(numbers, ids))
     return result
 
 
@@ -240,12 +250,7 @@ def delete_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
-    data = {
-        "CreateOrgId": 0,
-        "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
-        "Ids": ids,
-    }
-    result = api_sdk.Delete(form_id, data)
+    result = api_sdk.Delete(form_id, _ids_data(numbers, ids))
     return result
 
 
@@ -265,12 +270,7 @@ def execute_operation(
         numbers: 单据编号，多个用逗号分隔
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
-    data = {
-        "CreateOrgId": 0,
-        "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
-        "Ids": ids,
-    }
-    result = api_sdk.ExcuteOperation(form_id, op_number, data)
+    result = api_sdk.ExcuteOperation(form_id, op_number, _ids_data(numbers, ids))
     return result
 
 
