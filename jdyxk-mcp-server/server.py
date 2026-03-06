@@ -1,11 +1,13 @@
 import os
 import sys
 import json
+import time
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from k3cloud_webapi_sdk.main import K3CloudApiSdk
 from k3cloud_webapi_sdk.const.const_define import InvokeMethod
+from k3cloud_webapi_sdk.model.cookie_store import CookieStore
 
 load_dotenv()
 
@@ -19,28 +21,64 @@ mcp = FastMCP("kingdee-k3cloud")
 SESSION_LOST_MSG = "会话信息已丢失"
 
 
-def _is_session_expired(result: str) -> bool:
-    """Check for session expiry in both plain-text and unicode-escaped JSON."""
-    if SESSION_LOST_MSG in result:
-        return True
-    try:
-        data = json.loads(result)
+def _check_expired(data) -> bool:
+    if isinstance(data, list):
+        return any(_check_expired(item) for item in data)
+    if isinstance(data, dict):
         errors = (data.get("Result") or {}).get("ResponseStatus", {}).get("Errors", [])
         return any(SESSION_LOST_MSG in (e.get("Message") or "") for e in errors)
+    return False
+
+
+def _is_session_expired(result: str) -> bool:
+    try:
+        return _check_expired(json.loads(result))
     except Exception:
         return False
 
 
 class RetryableK3CloudApiSdk(K3CloudApiSdk):
-    """K3CloudApiSdk with automatic session recovery on expiry."""
+    """K3CloudApiSdk with automatic session recovery on expiry.
+
+    When K3Cloud returns "会话信息已丢失", the recovery flow is:
+      1. If the last session reset was more than _RESET_COOLDOWN seconds ago:
+         clear cookiesStore so BuildHeader() sends no session headers on retry.
+         The retry call lets the server issue a fresh SID (stored by
+         FillCookieAndHeader), even though the response body still reports
+         "session lost" while the new session activates server-side.
+      2. If we reset recently (within cooldown), skip clearing — the freshly
+         issued SID is preserved and retried directly.
+
+    Rapid consecutive resets would destroy each newly-issued SID before it
+    activates, so the 30-second cooldown keeps the latest SID intact until
+    the server accepts it.
+    """
+
+    _RESET_COOLDOWN = 300  # seconds — new SID takes several minutes to activate server-side
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._session_reset_at = 0.0
 
     def Execute(self, service_name, json_data=None, invoke_type=InvokeMethod.SYNC):
         result = super().Execute(service_name, json_data, invoke_type)
         if isinstance(result, str) and _is_session_expired(result):
-            print("[k3cloud] session expired, resetting and retrying...", file=sys.stderr)
-            self.cookiesStore.SID = ""
-            self.cookiesStore.cookies.clear()
-            result = super().Execute(service_name, json_data, invoke_type)
+            now = time.monotonic()
+            if now - self._session_reset_at >= self._RESET_COOLDOWN:
+                # Reset: clear stale SID, make one fire-and-forget call so the server
+                # issues a fresh SID (stored by FillCookieAndHeader). The response body
+                # will still say "session lost" — discard it. Do NOT retry the original
+                # request; return the error and let the SID activate over the next few
+                # minutes. Subsequent calls will use the newly-stored SID.
+                print("[k3cloud] session expired, re-establishing SID...", file=sys.stderr, flush=True)
+                self._session_reset_at = now
+                self.cookiesStore = CookieStore()
+                super().Execute(service_name, json_data, invoke_type)  # establishes SID, result discarded
+            else:
+                # Within cooldown: a fresh SID was recently obtained. Do NOT retry —
+                # retrying would cause the server to issue yet another new SID,
+                # restarting the activation clock. Just return the error and wait.
+                print("[k3cloud] session recovering, SID not yet active — skipping retry", file=sys.stderr, flush=True)
         return result
 
 
@@ -259,6 +297,60 @@ def execute_operation(
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
     return api_sdk.ExcuteOperation(form_id, op_number, _ids_data(numbers, ids))
+
+
+@mcp.tool()
+def query_metadata(form_id: str) -> str:
+    """查询金蝶云星空表单的元数据（字段结构信息）。
+
+    用于获取某个表单有哪些字段、字段类型等信息，便于构造查询和保存参数。
+
+    Args:
+        form_id: 表单ID。如 SAL_SaleOrder、PUR_PurchaseOrder、BD_MATERIAL 等
+    """
+    return api_sdk.QueryBusinessInfo({"FormId": form_id})
+
+
+@mcp.tool()
+def push_bill(
+    form_id: str,
+    numbers: str = "",
+    ids: str = "",
+    rule_id: str = "",
+    target_form_id: str = "",
+    target_org_id: str = "0",
+    target_bill_type_id: str = "",
+    is_enable_default_rule: str = "true",
+    custom_params: str = "",
+) -> str:
+    """下推金蝶云星空单据（如销售订单下推发货通知单）。
+
+    Args:
+        form_id: 源单表单ID。如 SAL_SaleOrder、PUR_PurchaseOrder 等
+        numbers: 源单编号，多个用逗号分隔。如 "XSDD000064,XSDD000065"
+        ids: 源单内码ID，多个用逗号分隔（numbers 和 ids 二选一）
+        rule_id: 转换规则ID。如 "SaleOrder-DeliveryNotice"（不填则用默认规则）
+        target_form_id: 目标单据表单ID（不填则由规则决定）
+        target_org_id: 目标组织ID，默认"0"
+        target_bill_type_id: 目标单据类型ID（不填则用默认）
+        is_enable_default_rule: 是否启用默认转换规则，默认"true"
+        custom_params: 自定义参数JSON字符串。如 '{"FDATE":"2024-01-01"}'（不填则不传）
+    """
+    data = {
+        "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
+        "Ids": ids,
+        "RuleId": rule_id,
+        "TargetFormId": target_form_id,
+        "TargetOrgId": target_org_id,
+        "TargetBillTypeId": target_bill_type_id,
+        "IsEnableDefaultRule": is_enable_default_rule,
+    }
+    if custom_params:
+        try:
+            data["CustomParams"] = json.loads(custom_params)
+        except json.JSONDecodeError as e:
+            return json.dumps({"error": f"Invalid JSON in custom_params: {e}"})
+    return api_sdk.Push(form_id, data)
 
 
 if __name__ == "__main__":

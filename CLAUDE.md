@@ -25,9 +25,10 @@ jdyxk-mcp-server/                          # 仓库根目录 / 工作目录
 - `InitConfig` 的参数名为 `app_secret`（不是 `app_sec`），环境变量名用 `KD_APP_SEC` 是为了简短
 - 所有 SDK 方法返回 JSON 字符串，需要 `json.loads()` 解析
 - SDK 方法名有拼写不一致：`ExcuteOperation`（少了个 e），这是 SDK 本身的命名
-- 会话过期时 SDK 返回含「会话信息已丢失」的字符串；`RetryableK3CloudApiSdk` 在 `Execute()` 层拦截并自动清除 `cookiesStore`（SID + cookies）重试一次。注意：重试必须在 SDK 层（`Execute` 覆写）实现，不能用工具层装饰器——FastMCP 会通过 `inspect.unwrap` 绕过装饰器直接调用原函数
+- 会话过期时 SDK 返回含「会话信息已丢失」的字符串；`RetryableK3CloudApiSdk` 在 `Execute()` 层拦截处理。注意：必须在 SDK 层（`Execute` 覆写）实现，不能用工具层装饰器——FastMCP 会通过 `inspect.unwrap` 绕过装饰器直接调用原函数
+- 金蝶服务端在「会话信息已丢失」响应里**会**带回新 SID（存入 cookiesStore），但新 SID 需要数分钟才在服务端激活。因此重试逻辑设有 300 秒冷却期（`_RESET_COOLDOWN`）：首次过期时清空 SID 并发起一次"建会话"调用（fire-and-forget，丢弃响应），然后**直接返回错误**，等 SID 自然激活；冷却期内再次过期则**不重试、不清 SID**，直接返回错误。关键：每次重试调用都会导致服务端下发新 SID 覆盖旧 SID，从而重置激活计时器——因此冷却期内必须完全跳过 retry，保持 SID 不变
 
-## 9 个工具与金蝶接口对应关系
+## 11 个工具与金蝶接口对应关系
 
 | MCP 工具 | SDK 方法 | 用途 |
 |----------|----------|------|
@@ -40,8 +41,10 @@ jdyxk-mcp-server/                          # 仓库根目录 / 工作目录
 | `unaudit_bill` | `UnAudit` | 反审核单据 |
 | `delete_bill` | `Delete` | 删除单据 |
 | `execute_operation` | `ExcuteOperation` | 禁用/启用等操作 |
+| `query_metadata` | `QueryBusinessInfo` | 查询表单元数据（字段结构） |
+| `push_bill` | `Push` | 下推单据 |
 
-### 未纳入第一批的接口（后续可扩展）
+### 未纳入的接口（后续可扩展）
 
 `BatchSave`、`Allocate` / `CancelAllocate`、`GroupSave` / `GroupDelete` / `QueryGroupInfo`、`attachmentUpload` / `attachmentDownLoad`、`getSysReportData`、`SendMsg`、`SwitchOrg`、`FlexSave`、`Execute`
 
@@ -75,7 +78,7 @@ jdyxk-mcp-server/                          # 仓库根目录 / 工作目录
 
 **参数设计** — `numbers` 用逗号分隔字符串（降低 LLM 调用难度）；`model_data` 用 JSON 字符串传递，自动补充 `Model` 包装层；所有工具直接返回 SDK 原始 JSON
 
-**会话自动重试** — `RetryableK3CloudApiSdk` 子类覆写 `Execute()`：检测到「会话信息已丢失」时清除 `cookiesStore`（SID + cookies）并重试一次，无需手动重启服务。装饰器方案不可靠，因为 FastMCP 会通过 `inspect.unwrap` 绕过装饰器
+**会话自动重试** — `RetryableK3CloudApiSdk` 子类覆写 `Execute()`：检测到「会话信息已丢失」时，带 30 秒冷却期的重试策略——首次清空 SID 重建会话，冷却期内保留新 SID 等待激活，避免连续清空导致 session 无法稳定。无需手动重启服务。装饰器方案不可靠，因为 FastMCP 会通过 `inspect.unwrap` 绕过装饰器
 
 ## 运行与调试
 
