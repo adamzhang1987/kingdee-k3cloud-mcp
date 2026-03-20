@@ -126,7 +126,6 @@ def _ids_data(numbers: str, ids: str) -> dict:
     }
 
 
-@mcp.tool()
 def query_bill(
     form_id: str,
     field_keys: str,
@@ -163,7 +162,6 @@ def query_bill(
     )
 
 
-@mcp.tool()
 def query_bill_json(
     form_id: str,
     field_keys: str,
@@ -202,7 +200,6 @@ def query_bill_json(
     )
 
 
-@mcp.tool()
 def view_bill(
     form_id: str,
     number: str = "",
@@ -221,7 +218,6 @@ def view_bill(
     return api_sdk.View(form_id, data)
 
 
-@mcp.tool()
 def save_bill(form_id: str, model_data: str) -> str:
     """保存金蝶云星空单据（新增或更新）。
 
@@ -240,7 +236,6 @@ def save_bill(form_id: str, model_data: str) -> str:
     return api_sdk.Save(form_id, data)
 
 
-@mcp.tool()
 def submit_bill(
     form_id: str,
     numbers: str = "",
@@ -256,7 +251,6 @@ def submit_bill(
     return api_sdk.Submit(form_id, _ids_data(numbers, ids))
 
 
-@mcp.tool()
 def audit_bill(
     form_id: str,
     numbers: str = "",
@@ -272,7 +266,6 @@ def audit_bill(
     return api_sdk.Audit(form_id, _ids_data(numbers, ids))
 
 
-@mcp.tool()
 def unaudit_bill(
     form_id: str,
     numbers: str = "",
@@ -288,7 +281,6 @@ def unaudit_bill(
     return api_sdk.UnAudit(form_id, _ids_data(numbers, ids))
 
 
-@mcp.tool()
 def delete_bill(
     form_id: str,
     numbers: str = "",
@@ -304,7 +296,6 @@ def delete_bill(
     return api_sdk.Delete(form_id, _ids_data(numbers, ids))
 
 
-@mcp.tool()
 def execute_operation(
     form_id: str,
     op_number: str,
@@ -322,7 +313,6 @@ def execute_operation(
     return api_sdk.ExcuteOperation(form_id, op_number, _ids_data(numbers, ids))
 
 
-@mcp.tool()
 def query_metadata(form_id: str) -> str:
     """查询金蝶云星空表单的元数据（字段结构信息）。
 
@@ -334,7 +324,6 @@ def query_metadata(form_id: str) -> str:
     return api_sdk.QueryBusinessInfo({"FormId": form_id})
 
 
-@mcp.tool()
 def push_bill(
     form_id: str,
     numbers: str = "",
@@ -376,6 +365,9 @@ def push_bill(
     return api_sdk.Push(form_id, data)
 
 
+READ_TOOLS = [query_bill, query_bill_json, view_bill, query_metadata]
+WRITE_TOOLS = [save_bill, submit_bill, audit_bill, unaudit_bill, delete_bill, execute_operation, push_bill]
+
 if __name__ == "__main__":
     import argparse
 
@@ -386,5 +378,19 @@ if __name__ == "__main__":
         default="stdio",
         help="传输协议（默认 stdio）",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["readonly", "readwrite"],
+        default=os.environ.get("MCP_MODE", "readwrite"),
+        help="readonly: 仅查询工具；readwrite: 全部工具（默认）",
+    )
     args = parser.parse_args()
+
+    for fn in READ_TOOLS:
+        mcp.tool()(fn)
+    if args.mode == "readwrite":
+        for fn in WRITE_TOOLS:
+            mcp.tool()(fn)
+
+    print(f"[k3cloud] mode={args.mode}, tools={len(READ_TOOLS) + (len(WRITE_TOOLS) if args.mode == 'readwrite' else 0)}", file=sys.stderr, flush=True)
     mcp.run(transport=args.transport)
