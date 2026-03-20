@@ -5,6 +5,8 @@ import time
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from mcp.server.auth.provider import TokenVerifier, AccessToken
+from mcp.server.auth.settings import AuthSettings
 from k3cloud_webapi_sdk.main import K3CloudApiSdk
 from k3cloud_webapi_sdk.const.const_define import InvokeMethod
 from k3cloud_webapi_sdk.model.cookie_store import CookieStore
@@ -16,7 +18,28 @@ _missing_env = [k for k in _required_env if not os.getenv(k)]
 if _missing_env:
     raise RuntimeError(f"Missing required env vars: {', '.join(_missing_env)}")
 
-mcp = FastMCP("kingdee-k3cloud")
+
+class ApiKeyVerifier:
+    """验证静态 API Key（Bearer Token）。
+
+    仅在 SSE/streamable-http 传输时生效；MCP_API_KEY 未设置时禁用鉴权。
+    """
+
+    def __init__(self, api_key: str):
+        self._key = api_key
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if token == self._key:
+            return AccessToken(token=token, client_id="api-key-client", scopes=[])
+        return None
+
+
+_api_key = os.getenv("MCP_API_KEY", "")
+_issuer_url = os.getenv("MCP_ISSUER_URL", "http://localhost:8000")
+_token_verifier = ApiKeyVerifier(_api_key) if _api_key else None
+_auth_settings = AuthSettings(issuer_url=_issuer_url, resource_server_url=_issuer_url) if _api_key else None
+
+mcp = FastMCP("kingdee-k3cloud", token_verifier=_token_verifier, auth=_auth_settings)
 
 SESSION_LOST_MSG = "会话信息已丢失"
 
@@ -354,4 +377,14 @@ def push_bill(
 
 
 if __name__ == "__main__":
-    mcp.run()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default="stdio",
+        help="传输协议（默认 stdio）",
+    )
+    args = parser.parse_args()
+    mcp.run(transport=args.transport)

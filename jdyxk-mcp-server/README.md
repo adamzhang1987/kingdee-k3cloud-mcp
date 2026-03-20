@@ -94,15 +94,49 @@ cp .env.example .env
 }
 ```
 
-### 其他 MCP 客户端
+### 其他 MCP 客户端（stdio）
 
-本 server 使用 stdio 传输，启动命令：
+本 server 默认使用 stdio 传输，启动命令：
 
 ```bash
 uv --directory /path/to/jdyxk-mcp-server run server.py
 ```
 
 任何支持 MCP stdio 协议的客户端均可接入。
+
+### SSE 模式（HTTP 服务）
+
+如需通过 HTTP 共享同一服务实例（适用于 Claude.ai Web、Cursor 等），可启动 SSE 模式：
+
+```bash
+cd /path/to/jdyxk-mcp-server
+uv run server.py --transport sse
+```
+
+自定义绑定地址和端口：
+
+```bash
+FASTMCP_HOST=0.0.0.0 FASTMCP_PORT=8080 uv run server.py --transport sse
+```
+
+也可在 `.env` 中配置（参见 `.env.example`）。启动后客户端连接地址：
+
+- SSE 端点：`http://127.0.0.1:8000/sse`
+- 消息端点：`http://127.0.0.1:8000/messages/`
+
+### SSE 鉴权
+
+设置 `MCP_API_KEY` 后，所有 SSE 请求需携带 Bearer Token：
+
+```bash
+# .env 中配置
+MCP_API_KEY=your-secret-api-key
+
+# 客户端连接时添加 Header
+Authorization: Bearer your-secret-api-key
+```
+
+不设置 `MCP_API_KEY` 则不启用鉴权（适用于本地开发或已有网络隔离的场景）。stdio 模式不受此配置影响。
 
 ## 可用工具
 
