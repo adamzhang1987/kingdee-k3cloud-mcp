@@ -5,9 +5,9 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml)
 
-金蝶云星空 K3Cloud MCP Server，让 AI 助手（Claude Desktop、Claude Code、Cursor 等）通过自然语言查询和操作金蝶 ERP 系统。
+金蝶云星空 K3Cloud MCP Server，让 AI 助手（Claude Desktop、Claude Code、Cursor、Cline、Cherry Studio、Openclaw 等任意支持 MCP 协议的客户端）通过自然语言查询和操作金蝶 ERP 系统。
 
-> **提示**：配合 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 使用效果更佳。Skill 为 Claude Code 提供金蝶表单字段、常用查询模式和工作流知识，大幅减少试错次数。
+> **提示**：Claude Code 用户可配合 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 获得更佳体验。Skill 为 Claude Code 注入金蝶表单字段、常用查询模式和工作流知识，大幅减少试错次数。
 
 MCP Server for Kingdee K3Cloud ERP. Connect AI assistants to your ERP system via the [Model Context Protocol](https://modelcontextprotocol.io/).
 
@@ -170,7 +170,7 @@ uvx mcp dev src/kingdee_k3cloud_mcp/server.py
 ## 架构说明
 
 ```
-AI 助手（Claude / Cursor 等）
+AI 助手（Claude Desktop / Claude Code / Cursor / Cline / Openclaw 等）
         │  MCP 协议
         ▼
 kingdee-k3cloud-mcp（本项目）
@@ -181,9 +181,9 @@ kingdee-k3cloud-mcp（本项目）
 
 本项目使用官方金蝶 Python SDK（[kingdee-cdp-webapi-sdk](https://pypi.org/project/kingdee-cdp-webapi-sdk/)）与 K3Cloud API 通信，并通过 [FastMCP](https://github.com/modelcontextprotocol/python-sdk) 将其封装为标准 MCP 工具。
 
-## 配套 Skill（Claude Code 用户推荐）
+## 配套 Skill（Claude Code 用户）
 
-[kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 是配套的 Claude Code Skill，提供：
+[kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 是面向 Claude Code 的配套 Skill，提供：
 
 - 常用表单 ID 速查表（BD_MATERIAL、SAL_SaleOrder 等）
 - 已验证字段名列表（避免字段名错误导致 500）
