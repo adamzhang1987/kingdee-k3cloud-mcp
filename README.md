@@ -2,7 +2,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml)
 
 金蝶云星空 K3Cloud MCP Server，让 AI 助手（Claude Desktop、Claude Code、Cursor 等）通过自然语言查询和操作金蝶 ERP 系统。
@@ -193,4 +193,4 @@ kingdee-k3cloud-mcp（本项目）
 
 ## 许可证
 
-MIT License — 详见 [LICENSE](LICENSE)
+Apache License 2.0 — 详见 [LICENSE](LICENSE)
