@@ -13,7 +13,7 @@ os.environ.setdefault("KD_APP_SEC", "test_app_sec")
 
 from k3cloud_webapi_sdk.main import K3CloudApiSdk
 
-from server import SESSION_LOST_MSG, RetryableK3CloudApiSdk, _check_expired, _is_session_expired
+from kingdee_k3cloud_mcp.server import SESSION_LOST_MSG, RetryableK3CloudApiSdk, _check_expired, _is_session_expired
 
 # ---------------------------------------------------------------------------
 # Fixtures

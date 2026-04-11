@@ -5,7 +5,7 @@ import time
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
-from mcp.server.auth.provider import TokenVerifier, AccessToken
+from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from k3cloud_webapi_sdk.main import K3CloudApiSdk
 from k3cloud_webapi_sdk.const.const_define import InvokeMethod
@@ -73,7 +73,7 @@ class RetryableK3CloudApiSdk(K3CloudApiSdk):
          issued SID is preserved and retried directly.
 
     Rapid consecutive resets would destroy each newly-issued SID before it
-    activates, so the 30-second cooldown keeps the latest SID intact until
+    activates, so the 300-second cooldown keeps the latest SID intact until
     the server accepts it.
     """
 
@@ -339,9 +339,9 @@ def push_bill(
 
     Args:
         form_id: 源单表单ID。如 SAL_SaleOrder、PUR_PurchaseOrder 等
-        numbers: 源单编号，多个用逗号分隔。如 "XSDD000064,XSDD000065"
+        numbers: 源单编号，多个用逗号分隔
         ids: 源单内码ID，多个用逗号分隔（numbers 和 ids 二选一）
-        rule_id: 转换规则ID。如 "SaleOrder-DeliveryNotice"（不填则用默认规则）
+        rule_id: 转换规则ID（不填则用默认规则）
         target_form_id: 目标单据表单ID（不填则由规则决定）
         target_org_id: 目标组织ID，默认"0"
         target_bill_type_id: 目标单据类型ID（不填则用默认）
@@ -368,10 +368,11 @@ def push_bill(
 READ_TOOLS = [query_bill, query_bill_json, view_bill, query_metadata]
 WRITE_TOOLS = [save_bill, submit_bill, audit_bill, unaudit_bill, delete_bill, execute_operation, push_bill]
 
-if __name__ == "__main__":
+
+def main():
     import argparse
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Kingdee K3Cloud MCP Server")
     parser.add_argument(
         "--transport",
         choices=["stdio", "sse", "streamable-http"],
@@ -394,3 +395,7 @@ if __name__ == "__main__":
 
     print(f"[k3cloud] mode={args.mode}, tools={len(READ_TOOLS) + (len(WRITE_TOOLS) if args.mode == 'readwrite' else 0)}", file=sys.stderr, flush=True)
     mcp.run(transport=args.transport)
+
+
+if __name__ == "__main__":
+    main()

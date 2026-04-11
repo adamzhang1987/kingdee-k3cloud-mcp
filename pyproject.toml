@@ -1,0 +1,48 @@
+[project]
+name = "kingdee-k3cloud-mcp"
+version = "0.1.0"
+description = "MCP Server for Kingdee K3Cloud ERP — connect AI assistants to 金蝶云星空 via natural language"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["mcp", "kingdee", "k3cloud", "erp", "ai", "llm", "agent"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "kingdee-cdp-webapi-sdk>=8.2.0",
+    "mcp[cli]>=1.26.0",
+    "python-dotenv>=1.2.1",
+]
+
+[project.scripts]
+kingdee-k3cloud-mcp = "kingdee_k3cloud_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/adamzhang1987/kingdee-k3cloud-mcp"
+Repository = "https://github.com/adamzhang1987/kingdee-k3cloud-mcp"
+Issues = "https://github.com/adamzhang1987/kingdee-k3cloud-mcp/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kingdee_k3cloud_mcp"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
