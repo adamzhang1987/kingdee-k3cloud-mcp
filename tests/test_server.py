@@ -149,14 +149,16 @@ class TestRetryableK3CloudApiSdk(unittest.TestCase):
 
         self.assertEqual(result, EXPIRED_BILLQUERY)
 
-    def test_expired_outside_cooldown_makes_two_calls(self):
+    @patch("time.monotonic", return_value=1000.0)
+    def test_expired_outside_cooldown_makes_two_calls(self, _):
         """First call gets expired; second is fire-and-forget to re-establish SID."""
         with self._patch_parent_execute([EXPIRED_BILLQUERY, SUCCESS_BILLQUERY]) as mock_exec:
             self.sdk.Execute("some.service")
 
         self.assertEqual(mock_exec.call_count, 2)
 
-    def test_expired_outside_cooldown_clears_cookiestore(self):
+    @patch("time.monotonic", return_value=1000.0)
+    def test_expired_outside_cooldown_clears_cookiestore(self, _):
         """cookiesStore is replaced with a fresh instance (SID and cookies cleared)."""
         original_store = self.sdk.cookiesStore
 
@@ -167,7 +169,8 @@ class TestRetryableK3CloudApiSdk(unittest.TestCase):
         self.assertEqual(self.sdk.cookiesStore.SID, "")
         self.assertEqual(self.sdk.cookiesStore.cookies, {})
 
-    def test_expired_outside_cooldown_updates_reset_timestamp(self):
+    @patch("time.monotonic", return_value=1000.0)
+    def test_expired_outside_cooldown_updates_reset_timestamp(self, _):
         """_session_reset_at is updated so the cooldown period starts."""
         self.assertEqual(self.sdk._session_reset_at, 0.0)
 
@@ -179,7 +182,8 @@ class TestRetryableK3CloudApiSdk(unittest.TestCase):
         self.assertGreaterEqual(self.sdk._session_reset_at, before)
         self.assertLessEqual(self.sdk._session_reset_at, after)
 
-    def test_executebillquery_expired_outside_cooldown(self):
+    @patch("time.monotonic", return_value=1000.0)
+    def test_executebillquery_expired_outside_cooldown(self, _):
         """[[...]] wrapped expiry also triggers the fire-and-forget reset."""
         with self._patch_parent_execute([EXPIRED_EXECUTEBILLQUERY, SUCCESS_EXECUTEBILLQUERY]) as mock_exec:
             result = self.sdk.Execute("some.service")
