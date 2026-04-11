@@ -100,7 +100,7 @@ cp .env.example .env
 }
 ```
 
-> **提示**：配合 [kingdee-skills](https://github.com/adamzhang1987/kingdee-k3cloud-skills) 使用效果更佳。Skill 为 Claude Code 提供金蝶表单字段、常用查询模式和工作流知识，大幅减少试错次数。
+> **提示**：配合 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 使用效果更佳。Skill 为 Claude Code 提供金蝶表单字段、常用查询模式和工作流知识，大幅减少试错次数。
 
 ### Cursor / Windsurf 及其他 MCP 客户端
 
@@ -178,7 +178,7 @@ kingdee-k3cloud-mcp（本项目）
 
 ## 配套 Skill（Claude Code 用户推荐）
 
-[kingdee-skills](https://github.com/adamzhang1987/kingdee-k3cloud-skills) 是配套的 Claude Code Skill，提供：
+[kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 是配套的 Claude Code Skill，提供：
 
 - 常用表单 ID 速查表（BD_MATERIAL、SAL_SaleOrder 等）
 - 已验证字段名列表（避免字段名错误导致 500）
