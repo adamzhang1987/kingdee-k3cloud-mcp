@@ -23,10 +23,23 @@ MCP Server for Kingdee K3Cloud ERP. Connect AI assistants to your ERP system via
 
 ### 方式一：uvx 直接运行（推荐）
 
-无需克隆仓库，直接通过 uvx 运行：
+无需克隆仓库，直接通过 uvx 运行。**注意**：服务启动时必须提供 5 个必填环境变量（`KD_SERVER_URL`、`KD_ACCT_ID`、`KD_USERNAME`、`KD_APP_ID`、`KD_APP_SEC`），否则会报错退出。
+
+**在 MCP 客户端中使用**（推荐，见下方"客户端配置"章节）：通过客户端配置的 `env` 字段传入，`uvx` 进程会自动读取。
+
+**手动测试时**，可通过以下任一方式提供环境变量：
 
 ```bash
-# 确保已安装 uv: https://docs.astral.sh/uv/
+# 方式 A：在当前目录创建 .env 文件（服务启动时自动加载）
+cp .env.example .env   # 填写真实值后再运行
+uvx kingdee-k3cloud-mcp
+
+# 方式 B：在命令行临时导出
+export KD_SERVER_URL=https://your-server/k3cloud/
+export KD_ACCT_ID=your_acct_id
+export KD_USERNAME=your_username
+export KD_APP_ID=your_app_id
+export KD_APP_SEC=your_app_secret
 uvx kingdee-k3cloud-mcp
 ```
 
