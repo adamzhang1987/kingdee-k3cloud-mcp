@@ -3,6 +3,7 @@ import sys
 import json
 import time
 import logging
+from pathlib import Path
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
@@ -381,7 +382,7 @@ def push_bill(
 def setup() -> None:
     """Initialize environment, validate required vars, and create the SDK instance."""
     global api_sdk
-    load_dotenv()
+    load_dotenv(dotenv_path=Path.cwd() / ".env")
     _required_env = ["KD_SERVER_URL", "KD_ACCT_ID", "KD_USERNAME", "KD_APP_ID", "KD_APP_SEC"]
     _missing_env = [k for k in _required_env if not os.getenv(k)]
     if _missing_env:
