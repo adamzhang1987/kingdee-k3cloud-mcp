@@ -1,15 +1,7 @@
 import json
-import os
 import time
 import unittest
 from unittest.mock import MagicMock, patch
-
-# Set required env vars before importing server module
-os.environ.setdefault("KD_SERVER_URL", "http://test.example.com")
-os.environ.setdefault("KD_ACCT_ID", "test_acct")
-os.environ.setdefault("KD_USERNAME", "test_user")
-os.environ.setdefault("KD_APP_ID", "test_app_id")
-os.environ.setdefault("KD_APP_SEC", "test_app_sec")
 
 from k3cloud_webapi_sdk.main import K3CloudApiSdk
 

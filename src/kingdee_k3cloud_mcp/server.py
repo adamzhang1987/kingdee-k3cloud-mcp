@@ -39,12 +39,7 @@ class ApiKeyVerifier:
         return None
 
 
-_api_key = os.getenv("MCP_API_KEY", "")
-_issuer_url = os.getenv("MCP_ISSUER_URL", "http://localhost:8000")
-_token_verifier = ApiKeyVerifier(_api_key) if _api_key else None
-_auth_settings = AuthSettings(issuer_url=_issuer_url, resource_server_url=_issuer_url) if _api_key else None
-
-mcp = FastMCP("kingdee-k3cloud", token_verifier=_token_verifier, auth=_auth_settings)
+mcp = FastMCP("kingdee-k3cloud")
 
 
 def _check_expired(data) -> bool:
@@ -391,6 +386,12 @@ def setup() -> None:
     _missing_env = [k for k in _required_env if not os.getenv(k)]
     if _missing_env:
         raise RuntimeError(f"Missing required env vars: {', '.join(_missing_env)}")
+
+    api_key = os.getenv("MCP_API_KEY", "")
+    if api_key:
+        issuer_url = os.getenv("MCP_ISSUER_URL", "http://localhost:8000")
+        mcp._token_verifier = ApiKeyVerifier(api_key)
+        mcp.settings.auth = AuthSettings(issuer_url=issuer_url, resource_server_url=issuer_url)
 
     server_url = os.getenv("KD_SERVER_URL", "")
     api_sdk = RetryableK3CloudApiSdk(server_url)
