@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-04-12
+## [1.0.0] - 2026-04-12
 
 ### Added
 
@@ -49,4 +49,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI matrix (Python 3.10 / 3.11 / 3.12)
 - GitHub Actions release workflow with PyPI Trusted Publishing (OIDC)
 
-[0.1.0]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/releases/tag/v0.1.0
+[1.0.0]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/releases/tag/v1.0.0
