@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+import logging
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
@@ -11,12 +12,16 @@ from k3cloud_webapi_sdk.main import K3CloudApiSdk
 from k3cloud_webapi_sdk.const.const_define import InvokeMethod
 from k3cloud_webapi_sdk.model.cookie_store import CookieStore
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
-_required_env = ["KD_SERVER_URL", "KD_ACCT_ID", "KD_USERNAME", "KD_APP_ID", "KD_APP_SEC"]
-_missing_env = [k for k in _required_env if not os.getenv(k)]
-if _missing_env:
-    raise RuntimeError(f"Missing required env vars: {', '.join(_missing_env)}")
+SESSION_LOST_MSG = "会话信息已丢失"
+
+# Write-tool guard: set to True in main() when --mode readonly is active.
+# Write tools remain registered but return an error when this flag is set.
+_readonly = False
+
+# SDK instance: initialized in setup() after environment is validated.
+api_sdk: "RetryableK3CloudApiSdk | None" = None
 
 
 class ApiKeyVerifier:
@@ -41,8 +46,6 @@ _auth_settings = AuthSettings(issuer_url=_issuer_url, resource_server_url=_issue
 
 mcp = FastMCP("kingdee-k3cloud", token_verifier=_token_verifier, auth=_auth_settings)
 
-SESSION_LOST_MSG = "会话信息已丢失"
-
 
 def _check_expired(data) -> bool:
     if isinstance(data, list):
@@ -56,7 +59,7 @@ def _check_expired(data) -> bool:
 def _is_session_expired(result: str) -> bool:
     try:
         return _check_expired(json.loads(result))
-    except Exception:
+    except (json.JSONDecodeError, TypeError, ValueError):
         return False
 
 
@@ -93,29 +96,19 @@ class RetryableK3CloudApiSdk(K3CloudApiSdk):
                 # will still say "session lost" — discard it. Do NOT retry the original
                 # request; return the error and let the SID activate over the next few
                 # minutes. Subsequent calls will use the newly-stored SID.
-                print("[k3cloud] session expired, re-establishing SID...", file=sys.stderr, flush=True)
+                logger.warning("[k3cloud] session expired, re-establishing SID...")
                 self._session_reset_at = now
-                self.cookiesStore = CookieStore()
+                if hasattr(self, "cookiesStore"):
+                    self.cookiesStore = CookieStore()
+                else:
+                    logger.warning("[k3cloud] SDK internals changed: cookiesStore not found, cannot reset SID")
                 super().Execute(service_name, json_data, invoke_type)  # establishes SID, result discarded
             else:
                 # Within cooldown: a fresh SID was recently obtained. Do NOT retry —
                 # retrying would cause the server to issue yet another new SID,
                 # restarting the activation clock. Just return the error and wait.
-                print("[k3cloud] session recovering, SID not yet active — skipping retry", file=sys.stderr, flush=True)
+                logger.warning("[k3cloud] session recovering, SID not yet active — skipping retry")
         return result
-
-
-server_url = os.getenv("KD_SERVER_URL", "")
-api_sdk = RetryableK3CloudApiSdk(server_url)
-api_sdk.InitConfig(
-    acct_id=os.getenv("KD_ACCT_ID", ""),
-    user_name=os.getenv("KD_USERNAME", ""),
-    app_id=os.getenv("KD_APP_ID", ""),
-    app_secret=os.getenv("KD_APP_SEC", ""),
-    server_url=server_url,
-    lcid=int(os.getenv("KD_LCID", "2052")),
-    org_num=int(os.getenv("KD_ORG_NUM", "0") or "0"),
-)
 
 
 def _ids_data(numbers: str, ids: str) -> dict:
@@ -126,6 +119,7 @@ def _ids_data(numbers: str, ids: str) -> dict:
     }
 
 
+@mcp.tool()
 def query_bill(
     form_id: str,
     field_keys: str,
@@ -162,6 +156,7 @@ def query_bill(
     )
 
 
+@mcp.tool()
 def query_bill_json(
     form_id: str,
     field_keys: str,
@@ -200,6 +195,7 @@ def query_bill_json(
     )
 
 
+@mcp.tool()
 def view_bill(
     form_id: str,
     number: str = "",
@@ -218,6 +214,19 @@ def view_bill(
     return api_sdk.View(form_id, data)
 
 
+@mcp.tool()
+def query_metadata(form_id: str) -> str:
+    """查询金蝶云星空表单的元数据（字段结构信息）。
+
+    用于获取某个表单有哪些字段、字段类型等信息，便于构造查询和保存参数。
+
+    Args:
+        form_id: 表单ID。如 SAL_SaleOrder、PUR_PurchaseOrder、BD_MATERIAL 等
+    """
+    return api_sdk.QueryBusinessInfo({"FormId": form_id})
+
+
+@mcp.tool()
 def save_bill(form_id: str, model_data: str) -> str:
     """保存金蝶云星空单据（新增或更新）。
 
@@ -227,6 +236,8 @@ def save_bill(form_id: str, model_data: str) -> str:
             {"Model": {"FCreateOrgId": {"FNumber": "100"}, "FNumber": "MAT001", "FName": "物料名称"}}
             如果传入的JSON中没有"Model"键，会自动包装。
     """
+    if _readonly:
+        return json.dumps({"error": "只读模式：写入操作已禁用"})
     try:
         data = json.loads(model_data)
     except json.JSONDecodeError as e:
@@ -236,6 +247,7 @@ def save_bill(form_id: str, model_data: str) -> str:
     return api_sdk.Save(form_id, data)
 
 
+@mcp.tool()
 def submit_bill(
     form_id: str,
     numbers: str = "",
@@ -248,9 +260,12 @@ def submit_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
+    if _readonly:
+        return json.dumps({"error": "只读模式：写入操作已禁用"})
     return api_sdk.Submit(form_id, _ids_data(numbers, ids))
 
 
+@mcp.tool()
 def audit_bill(
     form_id: str,
     numbers: str = "",
@@ -263,9 +278,12 @@ def audit_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
+    if _readonly:
+        return json.dumps({"error": "只读模式：写入操作已禁用"})
     return api_sdk.Audit(form_id, _ids_data(numbers, ids))
 
 
+@mcp.tool()
 def unaudit_bill(
     form_id: str,
     numbers: str = "",
@@ -278,9 +296,12 @@ def unaudit_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
+    if _readonly:
+        return json.dumps({"error": "只读模式：写入操作已禁用"})
     return api_sdk.UnAudit(form_id, _ids_data(numbers, ids))
 
 
+@mcp.tool()
 def delete_bill(
     form_id: str,
     numbers: str = "",
@@ -293,9 +314,12 @@ def delete_bill(
         numbers: 单据编号，多个用逗号分隔。如 "MAT001,MAT002"
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
+    if _readonly:
+        return json.dumps({"error": "只读模式：写入操作已禁用"})
     return api_sdk.Delete(form_id, _ids_data(numbers, ids))
 
 
+@mcp.tool()
 def execute_operation(
     form_id: str,
     op_number: str,
@@ -310,20 +334,12 @@ def execute_operation(
         numbers: 单据编号，多个用逗号分隔
         ids: 单据内码ID，多个用逗号分隔（numbers 和 ids 二选一）
     """
+    if _readonly:
+        return json.dumps({"error": "只读模式：写入操作已禁用"})
     return api_sdk.ExcuteOperation(form_id, op_number, _ids_data(numbers, ids))
 
 
-def query_metadata(form_id: str) -> str:
-    """查询金蝶云星空表单的元数据（字段结构信息）。
-
-    用于获取某个表单有哪些字段、字段类型等信息，便于构造查询和保存参数。
-
-    Args:
-        form_id: 表单ID。如 SAL_SaleOrder、PUR_PurchaseOrder、BD_MATERIAL 等
-    """
-    return api_sdk.QueryBusinessInfo({"FormId": form_id})
-
-
+@mcp.tool()
 def push_bill(
     form_id: str,
     numbers: str = "",
@@ -348,6 +364,8 @@ def push_bill(
         is_enable_default_rule: 是否启用默认转换规则，默认"true"
         custom_params: 自定义参数JSON字符串。如 '{"FDATE":"2024-01-01"}'（不填则不传）
     """
+    if _readonly:
+        return json.dumps({"error": "只读模式：写入操作已禁用"})
     data = {
         "Numbers": [n.strip() for n in numbers.split(",") if n.strip()] if numbers else [],
         "Ids": ids,
@@ -365,12 +383,37 @@ def push_bill(
     return api_sdk.Push(form_id, data)
 
 
-READ_TOOLS = [query_bill, query_bill_json, view_bill, query_metadata]
-WRITE_TOOLS = [save_bill, submit_bill, audit_bill, unaudit_bill, delete_bill, execute_operation, push_bill]
+def setup() -> None:
+    """Initialize environment, validate required vars, and create the SDK instance."""
+    global api_sdk
+    load_dotenv()
+    _required_env = ["KD_SERVER_URL", "KD_ACCT_ID", "KD_USERNAME", "KD_APP_ID", "KD_APP_SEC"]
+    _missing_env = [k for k in _required_env if not os.getenv(k)]
+    if _missing_env:
+        raise RuntimeError(f"Missing required env vars: {', '.join(_missing_env)}")
+
+    server_url = os.getenv("KD_SERVER_URL", "")
+    api_sdk = RetryableK3CloudApiSdk(server_url)
+    api_sdk.InitConfig(
+        acct_id=os.getenv("KD_ACCT_ID", ""),
+        user_name=os.getenv("KD_USERNAME", ""),
+        app_id=os.getenv("KD_APP_ID", ""),
+        app_secret=os.getenv("KD_APP_SEC", ""),
+        server_url=server_url,
+        lcid=int(os.getenv("KD_LCID", "2052")),
+        org_num=int(os.getenv("KD_ORG_NUM", "0") or "0"),
+    )
 
 
 def main():
+    global _readonly
     import argparse
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stderr,
+    )
 
     parser = argparse.ArgumentParser(description="Kingdee K3Cloud MCP Server")
     parser.add_argument(
@@ -387,13 +430,13 @@ def main():
     )
     args = parser.parse_args()
 
-    for fn in READ_TOOLS:
-        mcp.tool()(fn)
-    if args.mode == "readwrite":
-        for fn in WRITE_TOOLS:
-            mcp.tool()(fn)
+    _readonly = args.mode == "readonly"
+    setup()
 
-    print(f"[k3cloud] mode={args.mode}, tools={len(READ_TOOLS) + (len(WRITE_TOOLS) if args.mode == 'readwrite' else 0)}", file=sys.stderr, flush=True)
+    _read_count = 4  # query_bill, query_bill_json, view_bill, query_metadata
+    _write_count = 7  # save_bill, submit_bill, audit_bill, unaudit_bill, delete_bill, execute_operation, push_bill
+    tool_count = _read_count if _readonly else _read_count + _write_count
+    logger.info(f"[k3cloud] mode={args.mode}, tools={tool_count}")
     mcp.run(transport=args.transport)
 
 
