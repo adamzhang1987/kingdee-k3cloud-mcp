@@ -115,6 +115,55 @@ def _ids_data(numbers: str, ids: str) -> dict:
     }
 
 
+def _wrap_query_result(raw: str, top_count: int, limit: int, start_row: int) -> str:
+    """将 SDK 查询结果包装为带分页元数据的 envelope。
+
+    仅对成功的列表响应生效；错误响应（如会话过期）原样透传。
+
+    返回格式：
+        {
+          "rows": [...原始数据...],
+          "row_count": N,
+          "truncated": true/false,
+          "next_start_row": N,   # 仅 truncated=true 时存在
+          "hint": "..."          # 仅 truncated=true 时存在
+        }
+    """
+    if _is_session_expired(raw):
+        return raw
+
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+
+    if not isinstance(data, list):
+        return raw  # 非列表格式（如 API 错误对象）原样透传
+
+    row_count = len(data)
+    # 有效上限取 top_count 与 limit 的较小值（两者均为正时）
+    if top_count > 0 and limit > 0:
+        cap = min(top_count, limit)
+    else:
+        cap = top_count or limit
+
+    truncated = row_count > 0 and row_count >= cap
+
+    result: dict = {
+        "rows": data,
+        "row_count": row_count,
+        "truncated": truncated,
+    }
+    if truncated:
+        result["next_start_row"] = start_row + row_count
+        result["hint"] = (
+            f"返回行数已达上限（{cap} 行），数据可能被截断。"
+            f"请用 start_row={start_row + row_count} 继续翻页，或缩小 filter_string 时间范围后重新查询。"
+        )
+
+    return json.dumps(result, ensure_ascii=False)
+
+
 @mcp.tool()
 def query_bill(
     form_id: str,
@@ -139,7 +188,7 @@ def query_bill(
         start_row: 起始行号，默认0
         limit: 最大行数限制，默认2000
     """
-    return api_sdk.ExecuteBillQuery(
+    raw = api_sdk.ExecuteBillQuery(
         {
             "FormId": form_id,
             "FieldKeys": field_keys,
@@ -150,6 +199,7 @@ def query_bill(
             "Limit": limit,
         }
     )
+    return _wrap_query_result(raw, top_count, limit, start_row)
 
 
 @mcp.tool()
@@ -178,7 +228,7 @@ def query_bill_json(
         start_row: 起始行号，默认0
         limit: 最大行数限制，默认2000
     """
-    return api_sdk.BillQuery(
+    raw = api_sdk.BillQuery(
         {
             "FormId": form_id,
             "FieldKeys": field_keys,
@@ -189,6 +239,50 @@ def query_bill_json(
             "Limit": limit,
         }
     )
+    return _wrap_query_result(raw, top_count, limit, start_row)
+
+
+@mcp.tool()
+def count_bill(form_id: str, filter_string: str = "") -> str:
+    """估算某查询条件下的数据行数（不返回数据内容）。用于大数据量查询前的探测。
+
+    返回 JSON 格式：
+        {"estimated_rows": N, "is_exact": true/false, "hint": "..."}
+    当 is_exact=false 时，实际行数 ≥ estimated_rows，建议按月/周分片查询。
+
+    Args:
+        form_id: 表单ID。如 SAL_SaleOrder、PUR_PurchaseOrder、BD_MATERIAL 等
+        filter_string: 过滤条件。如 "FDate >= '2025-01-01' AND FDate < '2026-01-01'"
+    """
+    _PROBE_LIMIT = 5000
+    raw = api_sdk.BillQuery(
+        {
+            "FormId": form_id,
+            "FieldKeys": "FID",
+            "FilterString": filter_string,
+            "TopRowCount": _PROBE_LIMIT,
+            "StartRow": 0,
+            "Limit": _PROBE_LIMIT,
+        }
+    )
+
+    if _is_session_expired(raw):
+        return raw
+
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+
+    if not isinstance(data, list):
+        return raw
+
+    count = len(data)
+    is_exact = count < _PROBE_LIMIT
+    result: dict = {"estimated_rows": count, "is_exact": is_exact}
+    if not is_exact:
+        result["hint"] = f"实际行数 ≥ {_PROBE_LIMIT}，建议按自然月分片查询（每月单独调用 query_bill_json）。"
+    return json.dumps(result, ensure_ascii=False)
 
 
 @mcp.tool()
@@ -435,7 +529,7 @@ def main():
     _readonly = args.mode == "readonly"
     setup()
 
-    _read_count = 4  # query_bill, query_bill_json, view_bill, query_metadata
+    _read_count = 5  # query_bill, query_bill_json, count_bill, view_bill, query_metadata
     _write_count = 7  # save_bill, submit_bill, audit_bill, unaudit_bill, delete_bill, execute_operation, push_bill
     tool_count = _read_count if _readonly else _read_count + _write_count
     logger.info(f"[k3cloud] mode={args.mode}, tools={tool_count}")

@@ -5,7 +5,13 @@ from unittest.mock import MagicMock, patch
 
 from k3cloud_webapi_sdk.main import K3CloudApiSdk
 
-from kingdee_k3cloud_mcp.server import SESSION_LOST_MSG, RetryableK3CloudApiSdk, _check_expired, _is_session_expired
+from kingdee_k3cloud_mcp.server import (
+    SESSION_LOST_MSG,
+    RetryableK3CloudApiSdk,
+    _check_expired,
+    _is_session_expired,
+    _wrap_query_result,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -214,6 +220,119 @@ class TestRetryableK3CloudApiSdk(unittest.TestCase):
             self.sdk.Execute("some.service")
 
         self.assertEqual(self.sdk._session_reset_at, recent)
+
+
+# ---------------------------------------------------------------------------
+# _wrap_query_result
+# ---------------------------------------------------------------------------
+
+
+def _make_rows(n: int) -> list:
+    return [{"FID": i} for i in range(n)]
+
+
+class TestWrapQueryResult(unittest.TestCase):
+    # -- successful wrapping -------------------------------------------------
+
+    def test_returns_envelope_structure(self):
+        raw = json.dumps(_make_rows(10))
+        result = json.loads(_wrap_query_result(raw, top_count=100, limit=2000, start_row=0))
+        self.assertIn("rows", result)
+        self.assertIn("row_count", result)
+        self.assertIn("truncated", result)
+
+    def test_row_count_matches(self):
+        raw = json.dumps(_make_rows(42))
+        result = json.loads(_wrap_query_result(raw, top_count=100, limit=2000, start_row=0))
+        self.assertEqual(result["row_count"], 42)
+
+    def test_rows_preserves_original_data(self):
+        original = _make_rows(5)
+        raw = json.dumps(original)
+        result = json.loads(_wrap_query_result(raw, top_count=100, limit=2000, start_row=0))
+        self.assertEqual(result["rows"], original)
+
+    # -- truncated=false cases -----------------------------------------------
+
+    def test_not_truncated_when_rows_less_than_cap(self):
+        raw = json.dumps(_make_rows(50))
+        result = json.loads(_wrap_query_result(raw, top_count=100, limit=2000, start_row=0))
+        self.assertFalse(result["truncated"])
+        self.assertNotIn("next_start_row", result)
+        self.assertNotIn("hint", result)
+
+    def test_not_truncated_when_empty(self):
+        raw = json.dumps([])
+        result = json.loads(_wrap_query_result(raw, top_count=100, limit=2000, start_row=0))
+        self.assertFalse(result["truncated"])
+
+    # -- truncated=true cases ------------------------------------------------
+
+    def test_truncated_when_rows_equal_top_count(self):
+        raw = json.dumps(_make_rows(50))
+        result = json.loads(_wrap_query_result(raw, top_count=50, limit=2000, start_row=0))
+        self.assertTrue(result["truncated"])
+
+    def test_truncated_when_rows_equal_limit(self):
+        raw = json.dumps(_make_rows(2000))
+        result = json.loads(_wrap_query_result(raw, top_count=2000, limit=2000, start_row=0))
+        self.assertTrue(result["truncated"])
+
+    def test_cap_is_min_of_top_count_and_limit(self):
+        # top_count=500 < limit=2000 → cap=500
+        raw = json.dumps(_make_rows(500))
+        result = json.loads(_wrap_query_result(raw, top_count=500, limit=2000, start_row=0))
+        self.assertTrue(result["truncated"])
+
+    def test_next_start_row_is_start_plus_count(self):
+        raw = json.dumps(_make_rows(100))
+        result = json.loads(_wrap_query_result(raw, top_count=100, limit=2000, start_row=200))
+        self.assertTrue(result["truncated"])
+        self.assertEqual(result["next_start_row"], 300)
+
+    def test_hint_present_when_truncated(self):
+        raw = json.dumps(_make_rows(100))
+        result = json.loads(_wrap_query_result(raw, top_count=100, limit=2000, start_row=0))
+        self.assertIn("hint", result)
+
+    # -- passthrough for non-list / error responses --------------------------
+
+    def test_session_expired_passthrough(self):
+        """会话过期响应原样透传，不包装。"""
+        self.assertEqual(
+            _wrap_query_result(EXPIRED_BILLQUERY, top_count=100, limit=2000, start_row=0),
+            EXPIRED_BILLQUERY,
+        )
+
+    def test_executebillquery_expired_passthrough(self):
+        """[[...]] 格式会话过期也原样透传。"""
+        self.assertEqual(
+            _wrap_query_result(EXPIRED_EXECUTEBILLQUERY, top_count=100, limit=2000, start_row=0),
+            EXPIRED_EXECUTEBILLQUERY,
+        )
+
+    def test_invalid_json_passthrough(self):
+        bad = "not valid json"
+        self.assertEqual(_wrap_query_result(bad, top_count=100, limit=2000, start_row=0), bad)
+
+    def test_non_list_json_passthrough(self):
+        """非列表 JSON 原样透传（如 API 错误 dict）。"""
+        non_list = json.dumps({"error": "something"})
+        self.assertEqual(
+            _wrap_query_result(non_list, top_count=100, limit=2000, start_row=0),
+            non_list,
+        )
+
+    # -- ExecuteBillQuery 2D array format ------------------------------------
+
+    def test_executebillquery_format_wrapped(self):
+        """ExecuteBillQuery 返回二维数组，也应正确计算行数。"""
+        rows_2d = [["MAT001", "物料1"], ["MAT002", "物料2"]]
+        raw = json.dumps(rows_2d)
+        result = json.loads(_wrap_query_result(raw, top_count=100, limit=2000, start_row=0))
+        self.assertEqual(result["row_count"], 2)
+        self.assertEqual(result["rows"], rows_2d)
+        self.assertFalse(result["truncated"])
 
 
 if __name__ == "__main__":

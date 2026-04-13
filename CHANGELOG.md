@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`count_bill(form_id, filter_string)`**：新增行数探测工具，仅查询主键字段估算结果行数，不返回数据内容。返回 `{estimated_rows, is_exact, hint}`，适合大批量查询前的预判。`is_exact=false` 表示实际行数 ≥ 5000。
+- **分页截断元数据**：`query_bill` 和 `query_bill_json` 的返回结果现在包装为 envelope 格式：`{rows, row_count, truncated, next_start_row?, hint?}`。当返回行数达到 `min(top_count, limit)` 上限时，`truncated=true` 并提供 `next_start_row` 以便连续翻页，解决了原先"返回 2000 行但无截断信号"导致模型误判数据完整的问题。
+
 ## [1.0.0] - 2026-04-12
 
 ### Added
