@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-04-13
 
 ### Added
 - **`count_bill(form_id, filter_string)`**：新增行数探测工具，仅查询主键字段估算结果行数，不返回数据内容。返回 `{estimated_rows, is_exact, hint}`，适合大批量查询前的预判。`is_exact=false` 表示实际行数 ≥ 5000。
@@ -53,4 +53,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI matrix (Python 3.10 / 3.11 / 3.12)
 - GitHub Actions release workflow with PyPI Trusted Publishing (OIDC)
 
+[1.1.0]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/releases/tag/v1.0.0

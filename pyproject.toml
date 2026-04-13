@@ -1,6 +1,6 @@
 [project]
 name = "kingdee-k3cloud-mcp"
-version = "1.0.2"
+version = "1.1.0"
 description = "MCP Server for Kingdee K3Cloud ERP — connect AI assistants to 金蝶云星空 via natural language"
 readme = "README.md"
 license = { text = "Apache-2.0" }
