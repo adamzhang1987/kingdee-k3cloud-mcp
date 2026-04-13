@@ -13,8 +13,9 @@ MCP Server for Kingdee K3Cloud ERP. Connect AI assistants to your ERP system via
 
 ## 功能特性
 
-- **11 个 MCP 工具**：覆盖查询、新增、提交、审核、反审核、删除、下推等核心操作
+- **15 个 MCP 工具**：覆盖查询、大数据量导出、新增、提交、审核、反审核、删除、下推等核心操作
 - **通用接口设计**：单一 `form_id` 参数支持物料、客户、销售订单、采购订单等所有表单，无需为每种业务单独配置
+- **高阶查询原语**：`query_bill_all`（自动翻页）、`query_bill_to_file`（流式落盘）、`query_bill_range`（日期分片），彻底消除模型手动循环的负担
 - **只读/读写模式**：可限制 AI 只能查询，防止误操作
 - **自动会话恢复**：长时间运行时自动处理会话超时，无需人工干预
 - **多传输协议**：支持 stdio（本地）、SSE、streamable-http（远程共享）
@@ -190,25 +191,36 @@ FASTMCP_HOST=0.0.0.0 FASTMCP_PORT=8080 uvx kingdee-k3cloud-mcp --transport sse
 
 ## 可用工具
 
-| 工具 | 类型 | 说明 |
-|------|------|------|
-| `query_bill` | 查询 | 查询单据数据（返回二维数组） |
-| `query_bill_json` | 查询 | 查询单据数据（返回 JSON，字段名作为 key） |
-| `view_bill` | 查询 | 查看单条记录完整详情 |
-| `query_metadata` | 查询 | 查询表单字段结构（元数据） |
-| `save_bill` | 写入 | 保存/新增单据 |
-| `submit_bill` | 写入 | 提交单据 |
-| `audit_bill` | 写入 | 审核单据 |
-| `unaudit_bill` | 写入 | 反审核单据 |
-| `delete_bill` | 写入 | 删除单据 |
-| `execute_operation` | 写入 | 执行自定义操作（禁用、反禁用等） |
-| `push_bill` | 写入 | 下推单据（如销售订单→发货通知单） |
+### 查询工具（只读模式下可用）
+
+| 工具 | 说明 |
+|------|------|
+| `query_bill` | 查询单据数据（返回二维数组） |
+| `query_bill_json` | 查询单据数据（返回 JSON，字段名作为 key） |
+| `count_bill` | 估算查询结果行数，用于大数据量查询前的探测 |
+| `query_bill_all` | 自动翻页查询直到拉完或达到安全上限，返回合并结果 |
+| `query_bill_to_file` | 自动翻页并流式写入本地文件（ndjson / csv），适合万行以上导出 |
+| `query_bill_range` | 按日期自动分片（月/周/日）+ 翻页，适合跨月/跨年查询，支持落盘 |
+| `view_bill` | 查看单条记录完整详情 |
+| `query_metadata` | 查询表单字段结构（元数据） |
+
+### 写入工具（读写模式下可用）
+
+| 工具 | 说明 |
+|------|------|
+| `save_bill` | 保存/新增单据 |
+| `submit_bill` | 提交单据 |
+| `audit_bill` | 审核单据 |
+| `unaudit_bill` | 反审核单据 |
+| `delete_bill` | 删除单据 |
+| `execute_operation` | 执行自定义操作（禁用、反禁用等） |
+| `push_bill` | 下推单据（如销售订单→发货通知单） |
 
 所有工具通过 `form_id` 参数支持任意表单（物料、客户、供应商、销售订单、采购订单等）。
 
 ## 只读模式
 
-通过 `--mode readonly` 或 `MCP_MODE=readonly` 限制服务器只暴露 4 个查询工具，防止 AI 误操作写入数据。
+通过 `--mode readonly` 或 `MCP_MODE=readonly` 限制服务器只暴露 8 个查询工具，防止 AI 误操作写入数据。
 
 ```json
 "args": ["kingdee-k3cloud-mcp", "--mode", "readonly"]
