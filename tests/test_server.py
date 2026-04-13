@@ -1,16 +1,23 @@
 import json
+import os
+import tempfile
 import time
 import unittest
 from unittest.mock import MagicMock, patch
 
 from k3cloud_webapi_sdk.main import K3CloudApiSdk
 
+import kingdee_k3cloud_mcp.server as _server_mod
 from kingdee_k3cloud_mcp.server import (
     SESSION_LOST_MSG,
     RetryableK3CloudApiSdk,
     _check_expired,
     _is_session_expired,
+    _iter_date_chunks,
     _wrap_query_result,
+    query_bill_all,
+    query_bill_range,
+    query_bill_to_file,
 )
 
 # ---------------------------------------------------------------------------
@@ -333,6 +340,281 @@ class TestWrapQueryResult(unittest.TestCase):
         self.assertEqual(result["row_count"], 2)
         self.assertEqual(result["rows"], rows_2d)
         self.assertFalse(result["truncated"])
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by Phase 2 tests
+# ---------------------------------------------------------------------------
+
+
+def _make_page(n: int, offset: int = 0) -> str:
+    """Return a JSON-serialised list of n dicts starting at offset."""
+    return json.dumps([{"FID": i, "FName": f"row{i}"} for i in range(offset, offset + n)])
+
+
+def _patch_sdk(side_effect):
+    """Patch the module-level api_sdk so BillQuery returns given side_effect values."""
+    mock = MagicMock()
+    mock.BillQuery.side_effect = side_effect
+    return patch.object(_server_mod, "api_sdk", mock)
+
+
+# ---------------------------------------------------------------------------
+# query_bill_all
+# ---------------------------------------------------------------------------
+
+
+class TestQueryBillAll(unittest.TestCase):
+    def test_three_pages_exhausted(self):
+        """3 pages of 2000/2000/500 rows → row_count=4500, exhausted=True."""
+        pages = [_make_page(2000, 0), _make_page(2000, 2000), _make_page(500, 4000)]
+        with _patch_sdk(pages):
+            result = json.loads(query_bill_all("SAL_SaleOrder", "FID,FName", page_size=2000))
+        self.assertEqual(result["row_count"], 4500)
+        self.assertTrue(result["exhausted"])
+        self.assertNotIn("next_start_row", result)
+
+    def test_max_rows_truncation(self):
+        """Two 2000-row pages, max_rows=3000 → truncated to 3000, exhausted=False."""
+        pages = [_make_page(2000, 0), _make_page(2000, 2000)]
+        with _patch_sdk(pages):
+            result = json.loads(query_bill_all("SAL_SaleOrder", "FID", max_rows=3000, page_size=2000))
+        self.assertEqual(result["row_count"], 3000)
+        self.assertFalse(result["exhausted"])
+        self.assertEqual(result["next_start_row"], 3000)
+        self.assertIn("hint", result)
+
+    def test_session_expired_first_page(self):
+        """Session expired on first page → raw expired JSON returned directly."""
+        with _patch_sdk([EXPIRED_BILLQUERY]):
+            result_raw = query_bill_all("SAL_SaleOrder", "FID")
+        self.assertEqual(result_raw, EXPIRED_BILLQUERY)
+
+    def test_mid_page_non_list_returns_partial(self):
+        """Non-list response mid-pagination → error raw returned, first page data discarded."""
+        non_list = json.dumps({"error": "unexpected"})
+        with _patch_sdk([_make_page(10), non_list]):
+            result_raw = query_bill_all("SAL_SaleOrder", "FID", page_size=10)
+        # _paginate_bill returns error_raw on non-list; tool returns it directly
+        self.assertEqual(result_raw, non_list)
+
+    def test_single_page_less_than_page_size(self):
+        """Single page with fewer rows than page_size → exhausted=True, no next_start_row."""
+        with _patch_sdk([_make_page(42)]):
+            result = json.loads(query_bill_all("SAL_SaleOrder", "FID", page_size=2000))
+        self.assertEqual(result["row_count"], 42)
+        self.assertTrue(result["exhausted"])
+
+
+# ---------------------------------------------------------------------------
+# query_bill_to_file
+# ---------------------------------------------------------------------------
+
+
+class TestQueryBillToFile(unittest.TestCase):
+    def test_relative_path_rejected(self):
+        result = json.loads(query_bill_to_file("SAL_SaleOrder", "FID", output_path="relative/path.ndjson"))
+        self.assertIn("error", result)
+        self.assertNotIn("path", result)
+
+    def test_empty_path_rejected(self):
+        result = json.loads(query_bill_to_file("SAL_SaleOrder", "FID", output_path=""))
+        self.assertIn("error", result)
+
+    def test_invalid_format_rejected(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = os.path.join(tmpdir, "out.txt")
+            result = json.loads(query_bill_to_file("SAL_SaleOrder", "FID", output_path=out, format="xml"))
+        self.assertIn("error", result)
+
+    def test_nonexistent_parent_dir_rejected(self):
+        result = json.loads(query_bill_to_file("SAL_SaleOrder", "FID", output_path="/nonexistent_dir_xyz/out.ndjson"))
+        self.assertIn("error", result)
+
+    def test_ndjson_write_three_pages(self):
+        """3 pages of 100 rows each → 300 ndjson lines, valid JSON on each line."""
+        pages = [_make_page(100, 0), _make_page(100, 100), _make_page(100, 200), _make_page(0)]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = os.path.join(tmpdir, "out.ndjson")
+            with _patch_sdk(pages):
+                result = json.loads(query_bill_to_file("SAL_SaleOrder", "FID,FName", output_path=out, page_size=100))
+            self.assertEqual(result["row_count"], 300)
+            self.assertEqual(result["format"], "ndjson")
+            self.assertGreater(result["bytes"], 0)
+            with open(out, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+            self.assertEqual(len(lines), 300)
+            json.loads(lines[0])   # first line is valid JSON
+            json.loads(lines[-1])  # last line is valid JSON
+
+    def test_csv_write_header_and_rows(self):
+        """CSV output: first line is header from field_keys, total lines = header + rows."""
+        import csv as _csv
+        pages = [_make_page(50, 0), _make_page(50, 50), _make_page(0)]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = os.path.join(tmpdir, "out.csv")
+            with _patch_sdk(pages):
+                result = json.loads(
+                    query_bill_to_file("SAL_SaleOrder", "FID,FName", output_path=out, format="csv", page_size=50)
+                )
+            self.assertEqual(result["row_count"], 100)
+            with open(out, encoding="utf-8", newline="") as f:
+                reader = _csv.reader(f)
+                rows = list(reader)
+            self.assertEqual(rows[0], ["FID", "FName"])  # header
+            self.assertEqual(len(rows), 101)             # header + 100 data rows
+
+    def test_session_expired_mid_write_returns_partial(self):
+        """Session expiry after first page → error with partial row_count, file kept."""
+        pages = [_make_page(10), EXPIRED_BILLQUERY]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = os.path.join(tmpdir, "out.ndjson")
+            with _patch_sdk(pages):
+                result = json.loads(
+                    query_bill_to_file("SAL_SaleOrder", "FID", output_path=out, page_size=10)
+                )
+            self.assertIn("error", result)
+            self.assertEqual(result["row_count"], 10)
+            self.assertTrue(os.path.exists(out))
+
+    def test_max_rows_respected(self):
+        """max_rows=50 with two 100-row pages → exactly 50 rows written."""
+        pages = [_make_page(100, 0), _make_page(100, 100)]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = os.path.join(tmpdir, "out.ndjson")
+            with _patch_sdk(pages):
+                result = json.loads(
+                    query_bill_to_file("SAL_SaleOrder", "FID", output_path=out, page_size=100, max_rows=50)
+                )
+            self.assertEqual(result["row_count"], 50)
+
+
+# ---------------------------------------------------------------------------
+# _iter_date_chunks / query_bill_range
+# ---------------------------------------------------------------------------
+
+
+class TestIterDateChunks(unittest.TestCase):
+    def test_month_chunks_three_months(self):
+        chunks = list(_iter_date_chunks("2025-01-01", "2025-04-01", "month"))
+        self.assertEqual(len(chunks), 3)
+        self.assertEqual(chunks[0], ("2025-01-01", "2025-02-01"))
+        self.assertEqual(chunks[1], ("2025-02-01", "2025-03-01"))
+        self.assertEqual(chunks[2], ("2025-03-01", "2025-04-01"))
+
+    def test_month_chunks_year_boundary(self):
+        chunks = list(_iter_date_chunks("2024-11-01", "2025-02-01", "month"))
+        self.assertEqual(len(chunks), 3)
+        self.assertEqual(chunks[0], ("2024-11-01", "2024-12-01"))
+        self.assertEqual(chunks[1], ("2024-12-01", "2025-01-01"))
+        self.assertEqual(chunks[2], ("2025-01-01", "2025-02-01"))
+
+    def test_week_chunks(self):
+        chunks = list(_iter_date_chunks("2025-01-01", "2025-01-22", "week"))
+        self.assertEqual(len(chunks), 3)
+
+    def test_day_chunks(self):
+        chunks = list(_iter_date_chunks("2025-01-01", "2025-01-04", "day"))
+        self.assertEqual(len(chunks), 3)
+
+    def test_invalid_chunk_raises(self):
+        with self.assertRaises(ValueError):
+            list(_iter_date_chunks("2025-01-01", "2025-02-01", "quarter"))
+
+    def test_date_to_before_date_from_raises(self):
+        with self.assertRaises(ValueError):
+            list(_iter_date_chunks("2025-03-01", "2025-01-01", "month"))
+
+    def test_date_to_equal_date_from_raises(self):
+        with self.assertRaises(ValueError):
+            list(_iter_date_chunks("2025-01-01", "2025-01-01", "month"))
+
+    def test_invalid_date_format_raises(self):
+        with self.assertRaises(ValueError):
+            list(_iter_date_chunks("2025/01/01", "2025/04/01", "month"))
+
+
+class TestQueryBillRange(unittest.TestCase):
+    def test_invalid_chunk_returns_error(self):
+        result = json.loads(query_bill_range("SAL_SaleOrder", "FID", "FDate", "2025-01-01", "2025-04-01", chunk="quarter"))
+        self.assertIn("error", result)
+
+    def test_date_to_before_date_from_returns_error(self):
+        result = json.loads(query_bill_range("SAL_SaleOrder", "FID", "FDate", "2025-04-01", "2025-01-01"))
+        self.assertIn("error", result)
+
+    def test_inline_mode_three_chunks(self):
+        """3 monthly chunks × 10 rows = 30 total rows, chunks=3."""
+        # 3 chunks, each returns 10 rows (< page_size → exhausted per chunk)
+        pages = [_make_page(10)] * 3
+        with _patch_sdk(pages):
+            result = json.loads(
+                query_bill_range("SAL_SaleOrder", "FID,FName", "FDate", "2025-01-01", "2025-04-01", page_size=2000)
+            )
+        self.assertEqual(result["row_count"], 30)
+        self.assertEqual(result["chunks"], 3)
+        self.assertTrue(result["exhausted"])
+        self.assertIn("rows", result)
+
+    def test_inline_extra_filter_included(self):
+        """extra_filter is AND-combined with date filter in BillQuery call."""
+        mock = MagicMock()
+        mock.BillQuery.return_value = _make_page(5)
+        with patch.object(_server_mod, "api_sdk", mock):
+            query_bill_range(
+                "SAL_SaleOrder", "FID", "FDate",
+                "2025-01-01", "2025-02-01",
+                extra_filter="FCustId='X'",
+                chunk="month",
+            )
+        call_params = mock.BillQuery.call_args[0][0]
+        fs = call_params["FilterString"]
+        self.assertIn("FCustId='X'", fs)
+        self.assertIn("FDate >= '2025-01-01'", fs)
+        self.assertIn("AND", fs)
+
+    def test_file_mode_three_chunks_ndjson(self):
+        """3 monthly chunks each with 10 rows → 30 lines in ndjson file, chunks=3."""
+        pages = [_make_page(10)] * 3
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = os.path.join(tmpdir, "range.ndjson")
+            with _patch_sdk(pages):
+                result = json.loads(
+                    query_bill_range(
+                        "SAL_SaleOrder", "FID,FName", "FDate",
+                        "2025-01-01", "2025-04-01",
+                        output_path=out, page_size=2000,
+                    )
+                )
+            self.assertEqual(result["row_count"], 30)
+            self.assertEqual(result["chunks"], 3)
+            self.assertEqual(result["format"], "ndjson")
+            with open(out, encoding="utf-8") as f:
+                lines = f.read().splitlines()
+            self.assertEqual(len(lines), 30)
+
+    def test_file_mode_relative_path_rejected(self):
+        result = json.loads(
+            query_bill_range("SAL_SaleOrder", "FID", "FDate", "2025-01-01", "2025-04-01", output_path="rel/path.ndjson")
+        )
+        self.assertIn("error", result)
+
+    def test_file_mode_session_expired_mid_chunk_returns_partial(self):
+        """Session expires on second chunk → error returned, partial file kept."""
+        pages = [_make_page(10), EXPIRED_BILLQUERY]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out = os.path.join(tmpdir, "range.ndjson")
+            with _patch_sdk(pages):
+                result = json.loads(
+                    query_bill_range(
+                        "SAL_SaleOrder", "FID", "FDate",
+                        "2025-01-01", "2025-03-01",  # 2 chunks
+                        output_path=out, page_size=2000,
+                    )
+                )
+            self.assertIn("error", result)
+            self.assertEqual(result["row_count"], 10)
+            self.assertTrue(os.path.exists(out))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-04-13
+
+### Changed
+- 版本号与 `kingdee-k3cloud-skill` 对齐至 `1.3.0`，便于用户按版本号配套使用两个 repo。无功能变更。
+
+## [1.2.0] - 2026-04-13
+
+### Added
+- **`query_bill_all(form_id, field_keys, filter_string, order_string, max_rows, page_size)`**：服务端自动翻页，无需模型手动循环。拉完所有数据后返回 `{rows, row_count, exhausted}`；达到 `max_rows` 安全上限时提前截断并返回 `next_start_row`。
+- **`query_bill_to_file(form_id, field_keys, filter_string, output_path, format, page_size, max_rows)`**：流式落盘，不在内存中累积数据，适合万行以上的大批量导出。支持 `ndjson`（每行一个 JSON 对象）和 `csv` 格式；返回 `{path, row_count, bytes, format}`。
+- **`query_bill_range(form_id, field_keys, date_field, date_from, date_to, extra_filter, chunk, output_path, page_size)`**：日期自动分片 + 翻页包装器，将 `[date_from, date_to)` 按 `month/week/day` 切成 N 段依次查询。`output_path` 为空时内联合并返回（受 1 MB MCP 限制）；非空时流式落盘，返回 `{path, row_count, bytes, chunks, format}`。适合跨年查询。
+
 ## [1.1.0] - 2026-04-13
 
 ### Added
@@ -53,5 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI matrix (Python 3.10 / 3.11 / 3.12)
 - GitHub Actions release workflow with PyPI Trusted Publishing (OIDC)
 
+[1.3.0]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/releases/tag/v1.0.0

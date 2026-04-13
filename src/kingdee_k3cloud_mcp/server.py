@@ -1,9 +1,12 @@
+import csv
 import os
 import sys
 import json
 import time
 import logging
+from datetime import date, timedelta
 from pathlib import Path
+from typing import Iterator
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
@@ -164,6 +167,133 @@ def _wrap_query_result(raw: str, top_count: int, limit: int, start_row: int) -> 
     return json.dumps(result, ensure_ascii=False)
 
 
+def _paginate_bill(
+    params: dict, page_size: int, max_rows: int
+) -> "tuple[list, bool, int, str | None]":
+    """内部翻页原语。返回 (rows, exhausted, next_start_row, error_raw)。
+
+    - rows: 已拉取的数据列表
+    - exhausted=True 表示已拉完所有数据；False 表示因 max_rows 提前截断
+    - next_start_row: 下次应从此行继续（exhausted=False 时有意义）
+    - error_raw: 非 None 表示遇到 session expired / 格式错误，调用方应直接 return
+    """
+    rows: list = []
+    initial_start = params.get("StartRow", 0)
+    current_start = initial_start
+
+    while True:
+        page_params = {**params, "StartRow": current_start, "TopRowCount": page_size, "Limit": page_size}
+        raw = api_sdk.BillQuery(page_params)
+
+        if _is_session_expired(raw):
+            return rows, False, current_start, raw
+
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return rows, False, current_start, raw
+
+        if not isinstance(data, list):
+            return rows, False, current_start, raw
+
+        rows.extend(data)
+        page_count = len(data)
+
+        if len(rows) >= max_rows:
+            rows = rows[:max_rows]
+            return rows, False, initial_start + max_rows, None
+
+        if page_count < page_size:
+            return rows, True, initial_start + len(rows), None
+
+        current_start += page_size
+
+
+def _iter_date_chunks(
+    date_from: str, date_to: str, chunk: str
+) -> "Iterator[tuple[str, str]]":
+    """将 [date_from, date_to) 切成 N 个半开区间。chunk ∈ {'month','week','day'}。"""
+    if chunk not in {"month", "week", "day"}:
+        raise ValueError(f"chunk 必须是 month/week/day，收到: {chunk!r}")
+    try:
+        current = date.fromisoformat(date_from)
+        end = date.fromisoformat(date_to)
+    except ValueError as e:
+        raise ValueError(f"日期格式错误（需要 YYYY-MM-DD）: {e}") from e
+    if end <= current:
+        raise ValueError("date_to 必须晚于 date_from")
+
+    while current < end:
+        if chunk == "month":
+            if current.month == 12:
+                next_dt = date(current.year + 1, 1, 1)
+            else:
+                next_dt = date(current.year, current.month + 1, 1)
+        elif chunk == "week":
+            next_dt = current + timedelta(weeks=1)
+        else:
+            next_dt = current + timedelta(days=1)
+        chunk_end = min(next_dt, end)
+        yield current.isoformat(), chunk_end.isoformat()
+        current = chunk_end
+
+
+def _stream_to_file_handle(
+    f,
+    params: dict,
+    page_size: int,
+    max_rows: int,
+    fields: list,
+    fmt: str,
+    header_written: bool,
+) -> "tuple[int, bool, str | None]":
+    """将分页查询结果流式追加写入已打开的文件句柄。
+
+    Returns:
+        (rows_written, header_written, error_raw)
+        - rows_written: 本次写入的行数
+        - header_written: CSV 表头是否已写（传入值或本次更新后的值）
+        - error_raw: 非 None 表示遇到 session expired / 格式错误
+    """
+    writer = csv.writer(f) if fmt == "csv" else None
+    rows_written = 0
+    current_start = params.get("StartRow", 0)
+
+    while True:
+        page_params = {**params, "StartRow": current_start, "TopRowCount": page_size, "Limit": page_size}
+        raw = api_sdk.BillQuery(page_params)
+
+        if _is_session_expired(raw):
+            return rows_written, header_written, raw
+
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return rows_written, header_written, raw
+
+        if not isinstance(data, list):
+            return rows_written, header_written, raw
+
+        for row in data:
+            if fmt == "ndjson":
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            elif writer is not None:  # fmt == "csv"
+                if not header_written:
+                    writer.writerow(fields)
+                    header_written = True
+                writer.writerow([row.get(field, "") for field in fields])
+            rows_written += 1
+            if rows_written >= max_rows:
+                return rows_written, header_written, None
+
+        if len(data) < page_size:
+            break
+
+        current_start += page_size
+
+    return rows_written, header_written, None
+
+
 @mcp.tool()
 def query_bill(
     form_id: str,
@@ -283,6 +413,237 @@ def count_bill(form_id: str, filter_string: str = "") -> str:
     if not is_exact:
         result["hint"] = f"实际行数 ≥ {_PROBE_LIMIT}，建议按自然月分片查询（每月单独调用 query_bill_json）。"
     return json.dumps(result, ensure_ascii=False)
+
+
+@mcp.tool()
+def query_bill_all(
+    form_id: str,
+    field_keys: str,
+    filter_string: str = "",
+    order_string: str = "",
+    max_rows: int = 20000,
+    page_size: int = 2000,
+) -> str:
+    """自动翻页查询直到拉完或达到 max_rows 安全上限。
+
+    适合估算 ≤ 数千行的场景。大数据量（> 5000 行）请用 query_bill_to_file（落盘）
+    或 query_bill_range（日期分片），避免超过 MCP 1 MB 返回限制。
+
+    返回格式：
+        {"rows": [...], "row_count": N, "exhausted": true/false,
+         "next_start_row": N,   # 仅 exhausted=false 时
+         "hint": "..."}         # 仅 exhausted=false 时
+
+    Args:
+        form_id: 表单ID。如 SAL_SaleOrder、PUR_PurchaseOrder、BD_MATERIAL 等
+        field_keys: 查询字段，逗号分隔。如 "FBillNo,FDate,FAmount"
+        filter_string: 过滤条件。如 "FDate >= '2025-01-01'"
+        order_string: 排序字段。如 "FDate ASC"
+        max_rows: 安全上限，默认 20000；超过则提前终止并返回 exhausted=false
+        page_size: 每页行数，默认 2000，建议不超过 2000
+    """
+    params = {
+        "FormId": form_id,
+        "FieldKeys": field_keys,
+        "FilterString": filter_string,
+        "OrderString": order_string,
+    }
+    rows, exhausted, next_start, err = _paginate_bill(params, page_size, max_rows)
+    if err is not None:
+        return err
+    result: dict = {"rows": rows, "row_count": len(rows), "exhausted": exhausted}
+    if not exhausted:
+        result["next_start_row"] = next_start
+        result["hint"] = "已达 max_rows 安全上限，如需继续请调用 query_bill_range 或缩小 filter_string 后手动分片"
+    return json.dumps(result, ensure_ascii=False)
+
+
+@mcp.tool()
+def query_bill_to_file(
+    form_id: str,
+    field_keys: str,
+    filter_string: str = "",
+    output_path: str = "",
+    format: str = "ndjson",
+    page_size: int = 2000,
+    max_rows: int = 500000,
+) -> str:
+    """自动翻页并流式写入本地文件，适合大数据量导出（万行以上）。
+
+    不在内存中累积数据，写入完成后返回文件路径和统计信息。
+    文件可用 Read 工具抽检，或交由 pandas/polars 处理。
+
+    返回格式：
+        {"path": "...", "row_count": N, "bytes": M, "format": "ndjson"}
+        若中途出错：{"error": "...", "path": "...", "row_count": <已写入>, "bytes": M}
+
+    Args:
+        form_id: 表单ID。如 SAL_SaleOrder、PUR_PurchaseOrder、BD_MATERIAL 等
+        field_keys: 查询字段，逗号分隔。如 "FBillNo,FDate,FAmount"
+        filter_string: 过滤条件。如 "FDate >= '2025-01-01'"
+        output_path: 输出文件绝对路径。如 "/tmp/orders.ndjson"
+        format: 输出格式，ndjson（每行一个 JSON 对象）或 csv，默认 ndjson
+        page_size: 每页行数，默认 2000
+        max_rows: 最大写入行数，默认 500000；超过则截断并正常返回
+    """
+    if not output_path or not os.path.isabs(output_path):
+        return json.dumps({"error": "output_path 必须为非空绝对路径"}, ensure_ascii=False)
+    if format not in {"ndjson", "csv"}:
+        return json.dumps({"error": f"format 必须是 ndjson 或 csv，收到: {format!r}"}, ensure_ascii=False)
+    parent = os.path.dirname(output_path)
+    if not os.path.isdir(parent):
+        return json.dumps({"error": f"目录不存在: {parent}"}, ensure_ascii=False)
+
+    fields = [f.strip() for f in field_keys.split(",") if f.strip()]
+    params = {
+        "FormId": form_id,
+        "FieldKeys": field_keys,
+        "FilterString": filter_string,
+        "OrderString": "",
+        "StartRow": 0,
+    }
+
+    try:
+        with open(output_path, "w", encoding="utf-8", newline="") as f:
+            rows_written, _, error_raw = _stream_to_file_handle(
+                f, params, page_size, max_rows, fields, format, False
+            )
+    except OSError as e:
+        return json.dumps({"error": f"文件写入失败: {e}"}, ensure_ascii=False)
+
+    file_bytes = os.path.getsize(output_path)
+
+    if error_raw is not None:
+        return json.dumps({
+            "error": "查询中途遇到错误，已写入部分数据",
+            "path": output_path,
+            "row_count": rows_written,
+            "bytes": file_bytes,
+        }, ensure_ascii=False)
+
+    return json.dumps({
+        "path": output_path,
+        "row_count": rows_written,
+        "bytes": file_bytes,
+        "format": format,
+    }, ensure_ascii=False)
+
+
+@mcp.tool()
+def query_bill_range(
+    form_id: str,
+    field_keys: str,
+    date_field: str,
+    date_from: str,
+    date_to: str,
+    extra_filter: str = "",
+    chunk: str = "month",
+    output_path: str = "",
+    page_size: int = 2000,
+) -> str:
+    """按日期自动切片 + 翻页，适合跨月/跨年查询。
+
+    将 [date_from, date_to) 按 chunk 切成 N 段，每段独立翻页拉取。
+    output_path 为空时内联返回（受 MCP 1 MB 限制，适合小跨度）；
+    非空时流式落盘，适合大跨度（年级）查询。
+
+    返回格式（内联）：
+        {"rows": [...], "row_count": N, "chunks": K, "exhausted": true}
+    返回格式（落盘）：
+        {"path": "...", "row_count": N, "bytes": M, "chunks": K, "format": "ndjson"}
+        若中途出错：{"error": "...", "path": "...", "row_count": <已写入>, "bytes": M}
+
+    Args:
+        form_id: 表单ID。如 SAL_SaleOrder、PUR_PurchaseOrder 等
+        field_keys: 查询字段，逗号分隔
+        date_field: 日期字段名。通常是 FDate 或 FCreateDate
+        date_from: 起始日期（含），YYYY-MM-DD
+        date_to: 结束日期（不含），YYYY-MM-DD
+        extra_filter: 额外过滤条件（与日期条件 AND 拼接）
+        chunk: 切片粒度，month（默认）/ week / day
+        output_path: 落盘路径（绝对路径）。空=内联返回
+        page_size: 每页行数，默认 2000
+    """
+    try:
+        chunks = list(_iter_date_chunks(date_from, date_to, chunk))
+    except ValueError as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+    inline_mode = not output_path
+
+    if not inline_mode:
+        if not os.path.isabs(output_path):
+            return json.dumps({"error": "output_path 必须为绝对路径"}, ensure_ascii=False)
+        parent = os.path.dirname(output_path)
+        if not os.path.isdir(parent):
+            return json.dumps({"error": f"目录不存在: {parent}"}, ensure_ascii=False)
+
+    fields = [f.strip() for f in field_keys.split(",") if f.strip()]
+
+    def _build_filter(chunk_from: str, chunk_to: str) -> str:
+        date_filter = f"{date_field} >= '{chunk_from}' AND {date_field} < '{chunk_to}'"
+        return f"({extra_filter}) AND {date_filter}" if extra_filter else date_filter
+
+    if inline_mode:
+        all_rows: list = []
+        for chunk_from, chunk_to in chunks:
+            params = {
+                "FormId": form_id,
+                "FieldKeys": field_keys,
+                "FilterString": _build_filter(chunk_from, chunk_to),
+                "OrderString": "",
+            }
+            rows, _exhausted, _next, err = _paginate_bill(params, page_size, 20000)
+            if err is not None:
+                return err
+            all_rows.extend(rows)
+        return json.dumps({
+            "rows": all_rows,
+            "row_count": len(all_rows),
+            "chunks": len(chunks),
+            "exhausted": True,
+        }, ensure_ascii=False)
+
+    # Streaming / file mode
+    total_count = 0
+    error_raw = None
+    try:
+        with open(output_path, "w", encoding="utf-8", newline="") as f:
+            header_written = False
+            for chunk_from, chunk_to in chunks:
+                params = {
+                    "FormId": form_id,
+                    "FieldKeys": field_keys,
+                    "FilterString": _build_filter(chunk_from, chunk_to),
+                    "OrderString": "",
+                    "StartRow": 0,
+                }
+                rows_written, header_written, error_raw = _stream_to_file_handle(
+                    f, params, page_size, 500000, fields, "ndjson", header_written
+                )
+                total_count += rows_written
+                if error_raw is not None:
+                    break
+    except OSError as e:
+        return json.dumps({"error": f"文件写入失败: {e}"}, ensure_ascii=False)
+
+    file_bytes = os.path.getsize(output_path)
+
+    if error_raw is not None:
+        return json.dumps({
+            "error": "查询中途遇到错误，已写入部分数据",
+            "path": output_path,
+            "row_count": total_count,
+            "bytes": file_bytes,
+        }, ensure_ascii=False)
+
+    return json.dumps({
+        "path": output_path,
+        "row_count": total_count,
+        "bytes": file_bytes,
+        "chunks": len(chunks),
+        "format": "ndjson",
+    }, ensure_ascii=False)
 
 
 @mcp.tool()
@@ -529,7 +890,7 @@ def main():
     _readonly = args.mode == "readonly"
     setup()
 
-    _read_count = 5  # query_bill, query_bill_json, count_bill, view_bill, query_metadata
+    _read_count = 8  # query_bill, query_bill_json, count_bill, query_bill_all, query_bill_to_file, query_bill_range, view_bill, query_metadata
     _write_count = 7  # save_bill, submit_bill, audit_bill, unaudit_bill, delete_bill, execute_operation, push_bill
     tool_count = _read_count if _readonly else _read_count + _write_count
     logger.info(f"[k3cloud] mode={args.mode}, tools={tool_count}")
