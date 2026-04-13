@@ -9,6 +9,15 @@
 
 > **提示**：Claude Code 用户可配合 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 获得更佳体验。Skill 为 Claude Code 注入金蝶表单字段、常用查询模式和工作流知识，大幅减少试错次数。
 
+```
+┌─────────────────────┐    ┌─────────────────────┐    ┌──────────────────┐
+│  kingdee-k3cloud    │───▶│  kingdee-k3cloud    │───▶│  K3Cloud Web API │
+│  -skill             │    │  -mcp               │    │  (金蝶云星空)     │
+│  知识库 / 工作流     │    │  执行引擎 / MCP工具  │    │                  │
+└─────────────────────┘    └─────────────────────┘    └──────────────────┘
+      Claude Code 专属            所有 MCP 客户端通用
+```
+
 MCP Server for Kingdee K3Cloud ERP. Connect AI assistants to your ERP system via the [Model Context Protocol](https://modelcontextprotocol.io/).
 
 ## 功能特性
