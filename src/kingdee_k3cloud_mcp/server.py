@@ -1,20 +1,20 @@
 import csv
+import json
+import logging
 import os
 import sys
-import json
 import time
-import logging
+from collections.abc import Iterator
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Iterator
 
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+from k3cloud_webapi_sdk.const.const_define import InvokeMethod
+from k3cloud_webapi_sdk.main import K3CloudApiSdk
+from k3cloud_webapi_sdk.model.cookie_store import CookieStore
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
-from k3cloud_webapi_sdk.main import K3CloudApiSdk
-from k3cloud_webapi_sdk.const.const_define import InvokeMethod
-from k3cloud_webapi_sdk.model.cookie_store import CookieStore
+from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,12 @@ _readonly = False
 
 # SDK instance: initialized in setup() after environment is validated.
 api_sdk: "RetryableK3CloudApiSdk | None" = None
+
+
+def _sdk() -> "RetryableK3CloudApiSdk":
+    """Return the initialized SDK, asserting it is not None."""
+    assert api_sdk is not None, "api_sdk not initialized — call setup() first"
+    return api_sdk
 
 
 class ApiKeyVerifier:
@@ -100,8 +106,12 @@ class RetryableK3CloudApiSdk(K3CloudApiSdk):
                 if hasattr(self, "cookiesStore"):
                     self.cookiesStore = CookieStore()
                 else:
-                    logger.warning("[k3cloud] SDK internals changed: cookiesStore not found, cannot reset SID")
-                super().Execute(service_name, json_data, invoke_type)  # establishes SID, result discarded
+                    logger.warning(
+                        "[k3cloud] SDK internals changed: cookiesStore not found, cannot reset SID"
+                    )
+                super().Execute(
+                    service_name, json_data, invoke_type
+                )  # establishes SID, result discarded
             else:
                 # Within cooldown: a fresh SID was recently obtained. Do NOT retry —
                 # retrying would cause the server to issue yet another new SID,
@@ -145,10 +155,7 @@ def _wrap_query_result(raw: str, top_count: int, limit: int, start_row: int) -> 
 
     row_count = len(data)
     # 有效上限取 top_count 与 limit 的较小值（两者均为正时）
-    if top_count > 0 and limit > 0:
-        cap = min(top_count, limit)
-    else:
-        cap = top_count or limit
+    cap = min(top_count, limit) if top_count > 0 and limit > 0 else top_count or limit
 
     truncated = row_count > 0 and row_count >= cap
 
@@ -182,8 +189,13 @@ def _paginate_bill(
     current_start = initial_start
 
     while True:
-        page_params = {**params, "StartRow": current_start, "TopRowCount": page_size, "Limit": page_size}
-        raw = api_sdk.BillQuery(page_params)
+        page_params = {
+            **params,
+            "StartRow": current_start,
+            "TopRowCount": page_size,
+            "Limit": page_size,
+        }
+        raw = _sdk().BillQuery(page_params)
 
         if _is_session_expired(raw):
             return rows, False, current_start, raw
@@ -209,9 +221,7 @@ def _paginate_bill(
         current_start += page_size
 
 
-def _iter_date_chunks(
-    date_from: str, date_to: str, chunk: str
-) -> "Iterator[tuple[str, str]]":
+def _iter_date_chunks(date_from: str, date_to: str, chunk: str) -> "Iterator[tuple[str, str]]":
     """将 [date_from, date_to) 切成 N 个半开区间。chunk ∈ {'month','week','day'}。"""
     if chunk not in {"month", "week", "day"}:
         raise ValueError(f"chunk 必须是 month/week/day，收到: {chunk!r}")
@@ -260,8 +270,13 @@ def _stream_to_file_handle(
     current_start = params.get("StartRow", 0)
 
     while True:
-        page_params = {**params, "StartRow": current_start, "TopRowCount": page_size, "Limit": page_size}
-        raw = api_sdk.BillQuery(page_params)
+        page_params = {
+            **params,
+            "StartRow": current_start,
+            "TopRowCount": page_size,
+            "Limit": page_size,
+        }
+        raw = _sdk().BillQuery(page_params)
 
         if _is_session_expired(raw):
             return rows_written, header_written, raw
@@ -318,7 +333,7 @@ def query_bill(
         start_row: 起始行号，默认0
         limit: 最大行数限制，默认2000
     """
-    raw = api_sdk.ExecuteBillQuery(
+    raw = _sdk().ExecuteBillQuery(
         {
             "FormId": form_id,
             "FieldKeys": field_keys,
@@ -358,7 +373,7 @@ def query_bill_json(
         start_row: 起始行号，默认0
         limit: 最大行数限制，默认2000
     """
-    raw = api_sdk.BillQuery(
+    raw = _sdk().BillQuery(
         {
             "FormId": form_id,
             "FieldKeys": field_keys,
@@ -385,7 +400,7 @@ def count_bill(form_id: str, filter_string: str = "") -> str:
         filter_string: 过滤条件。如 "FDate >= '2025-01-01' AND FDate < '2026-01-01'"
     """
     _PROBE_LIMIT = 5000
-    raw = api_sdk.BillQuery(
+    raw = _sdk().BillQuery(
         {
             "FormId": form_id,
             "FieldKeys": "FID",
@@ -411,7 +426,9 @@ def count_bill(form_id: str, filter_string: str = "") -> str:
     is_exact = count < _PROBE_LIMIT
     result: dict = {"estimated_rows": count, "is_exact": is_exact}
     if not is_exact:
-        result["hint"] = f"实际行数 ≥ {_PROBE_LIMIT}，建议按自然月分片查询（每月单独调用 query_bill_json）。"
+        result["hint"] = (
+            f"实际行数 ≥ {_PROBE_LIMIT}，建议按自然月分片查询（每月单独调用 query_bill_json）。"
+        )
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -454,7 +471,9 @@ def query_bill_all(
     result: dict = {"rows": rows, "row_count": len(rows), "exhausted": exhausted}
     if not exhausted:
         result["next_start_row"] = next_start
-        result["hint"] = "已达 max_rows 安全上限，如需继续请调用 query_bill_range 或缩小 filter_string 后手动分片"
+        result["hint"] = (
+            "已达 max_rows 安全上限，如需继续请调用 query_bill_range 或缩小 filter_string 后手动分片"
+        )
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -489,7 +508,9 @@ def query_bill_to_file(
     if not output_path or not os.path.isabs(output_path):
         return json.dumps({"error": "output_path 必须为非空绝对路径"}, ensure_ascii=False)
     if format not in {"ndjson", "csv"}:
-        return json.dumps({"error": f"format 必须是 ndjson 或 csv，收到: {format!r}"}, ensure_ascii=False)
+        return json.dumps(
+            {"error": f"format 必须是 ndjson 或 csv，收到: {format!r}"}, ensure_ascii=False
+        )
     parent = os.path.dirname(output_path)
     if not os.path.isdir(parent):
         return json.dumps({"error": f"目录不存在: {parent}"}, ensure_ascii=False)
@@ -514,19 +535,25 @@ def query_bill_to_file(
     file_bytes = os.path.getsize(output_path)
 
     if error_raw is not None:
-        return json.dumps({
-            "error": "查询中途遇到错误，已写入部分数据",
+        return json.dumps(
+            {
+                "error": "查询中途遇到错误，已写入部分数据",
+                "path": output_path,
+                "row_count": rows_written,
+                "bytes": file_bytes,
+            },
+            ensure_ascii=False,
+        )
+
+    return json.dumps(
+        {
             "path": output_path,
             "row_count": rows_written,
             "bytes": file_bytes,
-        }, ensure_ascii=False)
-
-    return json.dumps({
-        "path": output_path,
-        "row_count": rows_written,
-        "bytes": file_bytes,
-        "format": format,
-    }, ensure_ascii=False)
+            "format": format,
+        },
+        ensure_ascii=False,
+    )
 
 
 @mcp.tool()
@@ -587,7 +614,7 @@ def query_bill_range(
     if inline_mode:
         all_rows: list = []
         for chunk_from, chunk_to in chunks:
-            params = {
+            params: dict = {
                 "FormId": form_id,
                 "FieldKeys": field_keys,
                 "FilterString": _build_filter(chunk_from, chunk_to),
@@ -597,12 +624,15 @@ def query_bill_range(
             if err is not None:
                 return err
             all_rows.extend(rows)
-        return json.dumps({
-            "rows": all_rows,
-            "row_count": len(all_rows),
-            "chunks": len(chunks),
-            "exhausted": True,
-        }, ensure_ascii=False)
+        return json.dumps(
+            {
+                "rows": all_rows,
+                "row_count": len(all_rows),
+                "chunks": len(chunks),
+                "exhausted": True,
+            },
+            ensure_ascii=False,
+        )
 
     # Streaming / file mode
     total_count = 0
@@ -630,20 +660,26 @@ def query_bill_range(
     file_bytes = os.path.getsize(output_path)
 
     if error_raw is not None:
-        return json.dumps({
-            "error": "查询中途遇到错误，已写入部分数据",
+        return json.dumps(
+            {
+                "error": "查询中途遇到错误，已写入部分数据",
+                "path": output_path,
+                "row_count": total_count,
+                "bytes": file_bytes,
+            },
+            ensure_ascii=False,
+        )
+
+    return json.dumps(
+        {
             "path": output_path,
             "row_count": total_count,
             "bytes": file_bytes,
-        }, ensure_ascii=False)
-
-    return json.dumps({
-        "path": output_path,
-        "row_count": total_count,
-        "bytes": file_bytes,
-        "chunks": len(chunks),
-        "format": "ndjson",
-    }, ensure_ascii=False)
+            "chunks": len(chunks),
+            "format": "ndjson",
+        },
+        ensure_ascii=False,
+    )
 
 
 @mcp.tool()
@@ -662,7 +698,7 @@ def view_bill(
         bill_id: 单据内码ID（number 和 bill_id 二选一）
     """
     data = {"CreateOrgId": 0, "Number": number, "Id": bill_id, "IsSortBySeq": "false"}
-    return api_sdk.View(form_id, data)
+    return _sdk().View(form_id, data)
 
 
 @mcp.tool()
@@ -674,7 +710,7 @@ def query_metadata(form_id: str) -> str:
     Args:
         form_id: 表单ID。如 SAL_SaleOrder、PUR_PurchaseOrder、BD_MATERIAL 等
     """
-    return api_sdk.QueryBusinessInfo({"FormId": form_id})
+    return _sdk().QueryBusinessInfo({"FormId": form_id})
 
 
 @mcp.tool()
@@ -695,7 +731,7 @@ def save_bill(form_id: str, model_data: str) -> str:
         return json.dumps({"error": f"Invalid JSON in model_data: {e}"})
     if "Model" not in data:
         data = {"Model": data}
-    return api_sdk.Save(form_id, data)
+    return _sdk().Save(form_id, data)
 
 
 @mcp.tool()
@@ -713,7 +749,7 @@ def submit_bill(
     """
     if _readonly:
         return json.dumps({"error": "只读模式：写入操作已禁用"})
-    return api_sdk.Submit(form_id, _ids_data(numbers, ids))
+    return _sdk().Submit(form_id, _ids_data(numbers, ids))
 
 
 @mcp.tool()
@@ -731,7 +767,7 @@ def audit_bill(
     """
     if _readonly:
         return json.dumps({"error": "只读模式：写入操作已禁用"})
-    return api_sdk.Audit(form_id, _ids_data(numbers, ids))
+    return _sdk().Audit(form_id, _ids_data(numbers, ids))
 
 
 @mcp.tool()
@@ -749,7 +785,7 @@ def unaudit_bill(
     """
     if _readonly:
         return json.dumps({"error": "只读模式：写入操作已禁用"})
-    return api_sdk.UnAudit(form_id, _ids_data(numbers, ids))
+    return _sdk().UnAudit(form_id, _ids_data(numbers, ids))
 
 
 @mcp.tool()
@@ -767,7 +803,7 @@ def delete_bill(
     """
     if _readonly:
         return json.dumps({"error": "只读模式：写入操作已禁用"})
-    return api_sdk.Delete(form_id, _ids_data(numbers, ids))
+    return _sdk().Delete(form_id, _ids_data(numbers, ids))
 
 
 @mcp.tool()
@@ -787,7 +823,7 @@ def execute_operation(
     """
     if _readonly:
         return json.dumps({"error": "只读模式：写入操作已禁用"})
-    return api_sdk.ExcuteOperation(form_id, op_number, _ids_data(numbers, ids))
+    return _sdk().ExcuteOperation(form_id, op_number, _ids_data(numbers, ids))
 
 
 @mcp.tool()
@@ -831,7 +867,7 @@ def push_bill(
             data["CustomParams"] = json.loads(custom_params)
         except json.JSONDecodeError as e:
             return json.dumps({"error": f"Invalid JSON in custom_params: {e}"})
-    return api_sdk.Push(form_id, data)
+    return _sdk().Push(form_id, data)
 
 
 def setup() -> None:
@@ -847,7 +883,7 @@ def setup() -> None:
     if api_key:
         issuer_url = os.getenv("MCP_ISSUER_URL", "http://localhost:8000")
         mcp._token_verifier = ApiKeyVerifier(api_key)
-        mcp.settings.auth = AuthSettings(issuer_url=issuer_url, resource_server_url=issuer_url)
+        mcp.settings.auth = AuthSettings(issuer_url=issuer_url, resource_server_url=issuer_url)  # type: ignore[arg-type]
 
     server_url = os.getenv("KD_SERVER_URL", "")
     api_sdk = RetryableK3CloudApiSdk(server_url)

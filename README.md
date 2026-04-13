@@ -276,6 +276,25 @@ kingdee-k3cloud-mcp（本项目）
 
 安装后 Claude Code 可自动掌握金蝶 ERP 的正确查询方式，无需反复试错。
 
+## 开发
+
+```bash
+git clone https://github.com/adamzhang1987/kingdee-k3cloud-mcp.git
+cd kingdee-k3cloud-mcp
+uv sync --dev
+
+make test    # 运行测试（覆盖率报告）
+make lint    # ruff check + mypy
+make format  # ruff format + fix
+make build   # uv build + twine check
+```
+
+安装 pre-commit hooks（可选，与 CI 保持一致）：
+
+```bash
+uv run pre-commit install
+```
+
 ## 许可证
 
 Apache License 2.0 — 详见 [LICENSE](LICENSE)

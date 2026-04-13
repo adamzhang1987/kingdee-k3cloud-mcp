@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v5
@@ -24,5 +24,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
-      - name: Run tests
-        run: uv run --frozen pytest
+      - name: Lint
+        run: |
+          uv run ruff check src/ tests/
+          uv run ruff format --check src/ tests/
+
+      - name: Typecheck
+        run: uv run mypy src/
+
+      - name: Test with coverage
+        run: uv run pytest --cov=src --cov-report=term-missing --cov-report=xml
+
+      - name: Build & twine check
+        run: |
+          uv build
+          uv run --with twine twine check dist/*
