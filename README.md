@@ -1,5 +1,7 @@
 # Kingdee K3Cloud MCP
 
+[English](README.en.md) | [中文](README.md)
+
 [![PyPI version](https://img.shields.io/pypi/v/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -294,6 +296,14 @@ make build   # uv build + twine check
 ```bash
 uv run pre-commit install
 ```
+
+## 贡献者
+
+<a href="https://github.com/adamzhang1987/kingdee-k3cloud-mcp/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=adamzhang1987/kingdee-k3cloud-mcp" />
+</a>
+
+Made with [contrib.rocks](https://contrib.rocks).
 
 ## 许可证
 

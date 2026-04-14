@@ -41,3 +41,11 @@ Please open an issue with:
 ## Security Issues
 
 Please do **not** open public issues for security vulnerabilities. See [SECURITY.md](SECURITY.md) instead.
+
+## Changelog
+
+If your PR adds a feature, fixes a bug, or changes behavior, please add a brief entry under the `[Unreleased]` section in `CHANGELOG.md`. Significant contributions will be credited by name in the release notes.
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md). By participating, you agree to abide by its terms.

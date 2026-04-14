@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞 / Security Vulnerability
+    url: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/blob/main/SECURITY.md
+    about: 请勿通过公开 Issue 报告安全漏洞。Please do not report security vulnerabilities through public issues.
