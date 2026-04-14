@@ -300,7 +300,7 @@ uv run pre-commit install
 ## 贡献者
 
 <a href="https://github.com/adamzhang1987/kingdee-k3cloud-mcp/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=adamzhang1987/kingdee-k3cloud-mcp" />
+  <img src="https://contrib.rocks/image?repo=adamzhang1987/kingdee-k3cloud-mcp" alt="Contributors" />
 </a>
 
 Made with [contrib.rocks](https://contrib.rocks).
