@@ -268,6 +268,36 @@ kingdee-k3cloud-mcp（本项目）
 
 本项目使用官方金蝶 Python SDK（[kingdee-cdp-webapi-sdk](https://pypi.org/project/kingdee-cdp-webapi-sdk/)）与 K3Cloud API 通信，并通过 [FastMCP](https://github.com/modelcontextprotocol/python-sdk) 将其封装为标准 MCP 工具。
 
+## 为什么选择 MCP 而非直接调用？
+
+让 AI 直接通过 Skill 构造 HTTP 请求访问 ERP，技术上可行，但会引入一系列安全隐患。MCP 的进程隔离模型从根本上解决了这些问题。
+
+### 凭证不进入 LLM 上下文
+
+MCP Server 以独立进程运行，凭证（`KD_APP_SEC`、服务器地址、账套 ID）通过环境变量注入，**模型永远看不到这些信息**。如果改用 Skill 直接调用，凭证必须出现在提示词或对话上下文中，一旦对话日志被导出、上下文被截图，或模型意外将其输出，机密就泄露了。
+
+### 强制权限边界，而非依赖提示词约束
+
+Skill 是"建议"——模型可能理解有误，也可能被精心构造的输入绕过。MCP Server 的 `--mode readonly` 则是**物理限制**：写入工具根本不存在于工具列表中，模型想用也用不了。这是"告诉实习生不要删数据"和"实习生根本没有 DELETE 权限"之间的本质区别。
+
+### 网络隔离
+
+MCP Server 部署在企业内网（或本机），可直接访问内部 ERP；LLM 运行在云端，**从不直接接触内部网络**。使用 stdio 传输时，所有 ERP 流量都在本机进程间流转，不经过任何外部网络。
+
+### 完整的审计链路
+
+每一次工具调用都经过 MCP Server，可在此统一记录操作类型、参数、时间戳和调用来源。直接调用方式下，AI 的每次请求对企业安全团队来说是不可见的黑盒。
+
+### 最小权限原则
+
+集成用户（`KD_USERNAME`）可在金蝶系统内被限制为特定模块、只读权限。MCP Server 继承并传递这些限制，LLM 无需感知权限边界，权限边界自然生效。
+
+### 个人见解
+
+将 LLM 视为**不可信的外部调用方**（而非可信的内部系统）是正确的零信任设计思路。MCP 层的存在，使 Skill 和 MCP 的职责分离清晰：Skill 负责"什么时候用、怎么用"（策略），MCP 负责"能做什么"（机制）。即使未来模型能力更强，或出现提示词注入攻击，最坏情况下的爆炸半径也被 MCP Server 的权限模型所限定，而不是依赖模型的"自觉"。
+
+---
+
 ## 配套 Skill（Claude Code 用户）
 
 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 是面向 Claude Code 的配套 Skill，提供：

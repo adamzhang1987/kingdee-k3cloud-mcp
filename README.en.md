@@ -258,6 +258,36 @@ Kingdee K3Cloud
 
 This project uses the official Kingdee Python SDK ([kingdee-cdp-webapi-sdk](https://pypi.org/project/kingdee-cdp-webapi-sdk/)) to communicate with the K3Cloud API, and wraps it as standard MCP tools via [FastMCP](https://github.com/modelcontextprotocol/python-sdk).
 
+## Why MCP Instead of Direct API Calls?
+
+Having an AI construct raw HTTP requests to your ERP through a Skill is technically feasible, but it introduces a class of security problems that MCP's process-isolation model eliminates at the architectural level.
+
+### Credentials never enter the LLM context
+
+The MCP server runs as a separate process. Secrets (`KD_APP_SEC`, server URL, account set ID) are injected via environment variables — **the model never sees them**. A skill-only approach requires credentials to appear in the prompt or conversation context, where they can leak through exported logs, screenshots, or accidental model output.
+
+### Hard enforcement, not prompt-level suggestions
+
+A Skill is a suggestion — the model may misinterpret it or be steered around it by a crafted input. `--mode readonly` on the MCP server is a **physical constraint**: write tools simply don't exist in the tool list, so the model cannot invoke them no matter what. This is the difference between "I told the intern not to delete records" and "the intern doesn't have DELETE permission."
+
+### Network isolation
+
+The MCP server runs inside the corporate network (or on localhost) with direct access to the ERP. The LLM runs in the cloud and **never touches the internal network**. With stdio transport, all ERP traffic flows between local processes and never traverses an external network.
+
+### A complete audit trail
+
+Every tool call passes through the MCP server, where you can log the operation type, parameters, timestamp, and caller identity in one place. With direct API calls from a Skill, every ERP request the AI makes is invisible to your security team.
+
+### Principle of least privilege
+
+The integration user (`KD_USERNAME`) can be scoped to specific modules and read-only access within Kingdee's own permission system. The MCP server inherits and propagates those limits automatically — the LLM doesn't need to know the boundaries exist; they're just enforced.
+
+### Author's perspective
+
+Treating the LLM as an **untrusted external caller** — not a trusted internal system — is the right zero-trust design posture. The MCP layer makes the separation of concerns clean: the Skill owns *policy* (when and how to use tools), the MCP server owns *mechanism* (what is physically possible). Even if a future model becomes more capable, or a prompt-injection attack succeeds, the blast radius is bounded by the MCP server's permission model — not by the model's compliance with instructions.
+
+---
+
 ## Companion Skill (Claude Code Users)
 
 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) is a companion Skill for Claude Code that provides:
