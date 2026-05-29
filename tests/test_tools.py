@@ -543,7 +543,9 @@ class TestPaginationStartRow:
         out = tmp_path / "out.ndjson"
         params = {"FormId": "X", "FieldKeys": "FID", "StartRow": 0}
         with patch.object(server_mod, "api_sdk", mock), open(out, "w") as f:
-            rows_written, _, err = _stream_to_file_handle(f, params, 5, 1000, ["FID"], "ndjson", False)
+            rows_written, _, err = _stream_to_file_handle(
+                f, params, 5, 1000, ["FID"], "ndjson", False
+            )
         assert err is None
         assert rows_written == 8
         second_call = mock.BillQuery.call_args_list[1][0][0]
