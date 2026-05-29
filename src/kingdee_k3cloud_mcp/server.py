@@ -155,7 +155,7 @@ def _wrap_query_result(raw: str, top_count: int, limit: int, start_row: int) -> 
 
     row_count = len(data)
     # 有效上限取 top_count 与 limit 的较小值（两者均为正时）
-    cap = min(top_count, limit) if top_count > 0 and limit > 0 else top_count or limit
+    cap = top_count if top_count > 0 else limit
 
     truncated = row_count > 0 and row_count >= cap
 
@@ -168,7 +168,7 @@ def _wrap_query_result(raw: str, top_count: int, limit: int, start_row: int) -> 
         result["next_start_row"] = start_row + row_count
         result["hint"] = (
             f"返回行数已达上限（{cap} 行），数据可能被截断。"
-            f"请用 start_row={start_row + row_count} 继续翻页，或缩小 filter_string 时间范围后重新查询。"
+            f"请用 start_row={start_row + row_count} 继续翻页获取下一页数据。"
         )
 
     return json.dumps(result, ensure_ascii=False)
@@ -192,7 +192,8 @@ def _paginate_bill(
         page_params = {
             **params,
             "StartRow": current_start,
-            "TopRowCount": page_size,
+            # TopRowCount 是绝对终止行号而非页大小，必须随偏移增长才能覆盖当前页窗口 [current_start, current_start+page_size)
+            "TopRowCount": current_start + page_size,
             "Limit": page_size,
         }
         raw = _sdk().BillQuery(page_params)
@@ -273,7 +274,8 @@ def _stream_to_file_handle(
         page_params = {
             **params,
             "StartRow": current_start,
-            "TopRowCount": page_size,
+            # TopRowCount 是绝对终止行号而非页大小，必须随偏移增长才能覆盖当前页窗口 [current_start, current_start+page_size)
+            "TopRowCount": current_start + page_size,
             "Limit": page_size,
         }
         raw = _sdk().BillQuery(page_params)
@@ -329,9 +331,11 @@ def query_bill(
         field_keys: 查询字段，逗号分隔。如 "FName,FNumber"
         filter_string: 过滤条件。如 "FNumber like 'MAT%'"
         order_string: 排序字段。如 "FNumber ASC"
-        top_count: 返回最大行数，默认100
-        start_row: 起始行号，默认0
-        limit: 最大行数限制，默认2000
+        top_count: 本次最多返回行数，默认100。映射到金蝶 TopRowCount（绝对终止行号 = start_row + top_count），
+            同时作为金蝶 Limit（单次页大小）。设为 0 表示不限制行数（仅靠 limit 控制）。
+        start_row: 起始行号，默认0。翻页时传入上一次返回的 next_start_row。
+        limit: 仅在 top_count=0 时生效，作为金蝶 Limit 页大小上限，默认2000。
+            top_count>0 时此参数被忽略（页大小由 top_count 决定）。
     """
     raw = _sdk().ExecuteBillQuery(
         {
@@ -339,9 +343,9 @@ def query_bill(
             "FieldKeys": field_keys,
             "FilterString": filter_string,
             "OrderString": order_string,
-            "TopRowCount": top_count,
+            "TopRowCount": (start_row + top_count) if top_count > 0 else 0,
             "StartRow": start_row,
-            "Limit": limit,
+            "Limit": top_count if top_count > 0 else limit,
         }
     )
     return _wrap_query_result(raw, top_count, limit, start_row)
@@ -369,9 +373,11 @@ def query_bill_json(
         field_keys: 查询字段，逗号分隔。如 "FName,FNumber,FCreateOrgId,FUseOrgId"
         filter_string: 过滤条件。如 "FNumber like 'MAT%'"
         order_string: 排序字段。如 "FNumber ASC"
-        top_count: 返回最大行数，默认100
-        start_row: 起始行号，默认0
-        limit: 最大行数限制，默认2000
+        top_count: 本次最多返回行数，默认100。映射到金蝶 TopRowCount（绝对终止行号 = start_row + top_count），
+            同时作为金蝶 Limit（单次页大小）。设为 0 表示不限制行数（仅靠 limit 控制）。
+        start_row: 起始行号，默认0。翻页时传入上一次返回的 next_start_row。
+        limit: 仅在 top_count=0 时生效，作为金蝶 Limit 页大小上限，默认2000。
+            top_count>0 时此参数被忽略（页大小由 top_count 决定）。
     """
     raw = _sdk().BillQuery(
         {
@@ -379,9 +385,9 @@ def query_bill_json(
             "FieldKeys": field_keys,
             "FilterString": filter_string,
             "OrderString": order_string,
-            "TopRowCount": top_count,
+            "TopRowCount": (start_row + top_count) if top_count > 0 else 0,
             "StartRow": start_row,
-            "Limit": limit,
+            "Limit": top_count if top_count > 0 else limit,
         }
     )
     return _wrap_query_result(raw, top_count, limit, start_row)

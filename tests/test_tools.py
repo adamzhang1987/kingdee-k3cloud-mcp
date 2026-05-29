@@ -13,6 +13,8 @@ import pytest
 
 import kingdee_k3cloud_mcp.server as server_mod
 from kingdee_k3cloud_mcp.server import (
+    _paginate_bill,
+    _stream_to_file_handle,
     audit_bill,
     count_bill,
     delete_bill,
@@ -484,6 +486,69 @@ class TestSetup:
             server_mod.main()
 
         assert server_mod._readonly is True
+
+
+# ---------------------------------------------------------------------------
+# Pagination regression tests — start_row > 0 bug (fixed in v1.3.2)
+# ---------------------------------------------------------------------------
+
+
+class TestPaginationStartRow:
+    """Verify that start_row > 0 produces correct TopRowCount in SDK calls."""
+
+    def test_query_bill_start_row_nonzero_top_count_correct(self):
+        mock = _mock_sdk(ExecuteBillQuery=SUCCESS_2D)
+        with patch.object(server_mod, "api_sdk", mock):
+            query_bill("BD_MATERIAL", "FName", start_row=100, top_count=50)
+        call_params = mock.ExecuteBillQuery.call_args[0][0]
+        assert call_params["StartRow"] == 100
+        assert call_params["TopRowCount"] == 150  # 100 + 50, not just 50
+        assert call_params["Limit"] == 50
+
+    def test_query_bill_json_start_row_nonzero_top_count_correct(self):
+        mock = _mock_sdk(BillQuery=SUCCESS_ROWS)
+        with patch.object(server_mod, "api_sdk", mock):
+            query_bill_json("BD_MATERIAL", "FName", start_row=200, top_count=100)
+        call_params = mock.BillQuery.call_args[0][0]
+        assert call_params["StartRow"] == 200
+        assert call_params["TopRowCount"] == 300  # 200 + 100
+        assert call_params["Limit"] == 100
+
+    def test_paginate_bill_second_page_top_row_count_correct(self):
+        """_paginate_bill page 2 must send TopRowCount = current_start + page_size."""
+        page1 = json.dumps([{"FID": i} for i in range(10)])
+        page2 = json.dumps([{"FID": i} for i in range(5)])  # partial → exhausted
+        mock = _mock_sdk(BillQuery=page1)
+        mock.BillQuery.side_effect = [page1, page2]
+        with patch.object(server_mod, "api_sdk", mock):
+            rows, exhausted, _, err = _paginate_bill({"FormId": "X", "FieldKeys": "FID"}, 10, 1000)
+        assert err is None
+        assert exhausted is True
+        assert len(rows) == 15
+        # First call: StartRow=0, TopRowCount=10
+        first_call = mock.BillQuery.call_args_list[0][0][0]
+        assert first_call["StartRow"] == 0
+        assert first_call["TopRowCount"] == 10
+        # Second call: StartRow=10, TopRowCount=20
+        second_call = mock.BillQuery.call_args_list[1][0][0]
+        assert second_call["StartRow"] == 10
+        assert second_call["TopRowCount"] == 20
+
+    def test_stream_to_file_second_page_top_row_count_correct(self, tmp_path):
+        """_stream_to_file_handle page 2 must send TopRowCount = current_start + page_size."""
+        page1 = json.dumps([{"FID": i} for i in range(5)])
+        page2 = json.dumps([{"FID": i} for i in range(3)])  # partial → done
+        mock = _mock_sdk(BillQuery=page1)
+        mock.BillQuery.side_effect = [page1, page2]
+        out = tmp_path / "out.ndjson"
+        params = {"FormId": "X", "FieldKeys": "FID", "StartRow": 0}
+        with patch.object(server_mod, "api_sdk", mock), open(out, "w") as f:
+            rows_written, _, err = _stream_to_file_handle(f, params, 5, 1000, ["FID"], "ndjson", False)
+        assert err is None
+        assert rows_written == 8
+        second_call = mock.BillQuery.call_args_list[1][0][0]
+        assert second_call["StartRow"] == 5
+        assert second_call["TopRowCount"] == 10  # 5 + 5
 
 
 if __name__ == "__main__":

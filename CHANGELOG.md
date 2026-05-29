@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-05-29
+
+### Fixed
+- **分页 Bug**：`query_bill` / `query_bill_json` 在 `start_row > 0` 时 `TopRowCount` 未随偏移量增加，导致请求窗口落在结果集之外，翻页返回空数据。修复方式：将 `TopRowCount` 改为 `start_row + top_count`，`Limit` 改为 `top_count`（`top_count > 0` 时）。
+- **自动翻页 Bug**：`_paginate_bill`（`query_bill_all` / `query_bill_range`）和 `_stream_to_file_handle`（`query_bill_to_file`）内部翻页循环同样受此影响，第二页起 `TopRowCount` 固定为 `page_size` 而非 `current_start + page_size`，导致翻页后返回空。已同步修复。
+- 更新 `_wrap_query_result` 的 hint 文案，去掉误导性的"缩小时间范围"提示，明确引导用户用 `next_start_row` 继续翻页。
+
 ## [1.3.1] - 2026-04-14
 
 ### Changed
