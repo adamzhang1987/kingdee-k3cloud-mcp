@@ -9,7 +9,7 @@
 
 MCP Server for Kingdee K3Cloud ERP. Lets AI assistants (Claude Desktop, Claude Code, Cursor, Cline, Cherry Studio, Openclaw, and any MCP-compatible client) query and operate your Kingdee ERP system through natural language.
 
-> **Tip**: Claude Code users can pair this with [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) for a better experience. The Skill injects K3Cloud form field knowledge, common query patterns, and workflow guidance into Claude Code, significantly reducing trial and error.
+> **Tip**: Agents that support the Skill mechanism (Claude Code, openclaw, hermes, etc.) can pair this with [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) for a better experience. The Skill injects K3Cloud form field knowledge, common query patterns, and workflow guidance into the agent, significantly reducing trial and error.
 
 ```
 ┌─────────────────────┐    ┌─────────────────────┐    ┌──────────────────┐
@@ -17,7 +17,7 @@ MCP Server for Kingdee K3Cloud ERP. Lets AI assistants (Claude Desktop, Claude C
 │  -skill             │    │  -mcp               │    │  (Kingdee Cloud) │
 │  Knowledge / Flows  │    │  Execution / Tools  │    │                  │
 └─────────────────────┘    └─────────────────────┘    └──────────────────┘
-      Claude Code only            All MCP clients
+      Skill-capable agents        All MCP clients
 ```
 
 ## Features
@@ -288,15 +288,15 @@ Treating the LLM as an **untrusted external caller** — not a trusted internal 
 
 ---
 
-## Companion Skill (Claude Code Users)
+## Companion Skill (Skill-Capable Agents)
 
-[kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) is a companion Skill for Claude Code that provides:
+[kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) is a companion Skill for any Skill-capable agent (Claude Code, openclaw, hermes, etc.) that provides:
 
 - Common form ID quick-reference (BD_MATERIAL, SAL_SaleOrder, etc.)
 - Verified field name lists (avoid 500 errors from incorrect field names)
 - Complete workflows for daily reports, customer queries, sales analysis, inventory analysis, order tracking, and more
 
-Once installed, Claude Code automatically knows the correct way to query Kingdee ERP without repeated trial and error.
+Once installed, the agent automatically knows the correct way to query Kingdee ERP without repeated trial and error.
 
 ## Development
 
