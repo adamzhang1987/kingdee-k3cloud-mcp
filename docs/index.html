@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kingdee K3Cloud MCP — 让 AI 助手直连金蝶云星空</title>
+<meta name="description" content="金蝶云星空 K3Cloud MCP Server，让 Claude Desktop、Claude Code、Cursor、Cline 等任意支持 MCP 协议的客户端通过自然语言查询和操作金蝶 ERP 系统。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐉</text></svg>">
+<style>
+  :root{
+    --bg-0:#070a14;
+    --bg-1:#0c1120;
+    --bg-2:#111a2e;
+    --accent-1:#5eead4;
+    --accent-2:#818cf8;
+    --accent-3:#c084fc;
+    --text-0:#e8ecfb;
+    --text-1:#a8b2d1;
+    --text-2:#6b7591;
+    --border:rgba(148,163,255,.14);
+    --card-bg:rgba(255,255,255,.03);
+    --radius:16px;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    font-family:var(--sans);
+    color:var(--text-0);
+    background:
+      radial-gradient(circle at 15% -10%, rgba(129,140,248,.25), transparent 45%),
+      radial-gradient(circle at 85% 0%, rgba(94,234,212,.15), transparent 40%),
+      radial-gradient(circle at 50% 100%, rgba(192,132,252,.12), transparent 50%),
+      linear-gradient(180deg, var(--bg-0), var(--bg-1) 40%, var(--bg-2));
+    background-attachment:fixed;
+    line-height:1.6;
+  }
+  a{color:inherit;}
+  .lang-en{display:none;}
+  body.lang-en .lang-zh{display:none;}
+  body.lang-en .lang-en{display:initial;}
+  body.lang-en .lang-en.inline{display:inline;}
+
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px;}
+
+  /* nav */
+  nav{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:blur(16px);
+    background:rgba(7,10,20,.65);
+    border-bottom:1px solid var(--border);
+  }
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.2px;text-decoration:none;}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,var(--accent-1),var(--accent-2));box-shadow:0 0 12px var(--accent-2);}
+  .navlinks{display:flex;gap:22px;font-size:14px;color:var(--text-1);}
+  .navlinks a{text-decoration:none;transition:color .15s;}
+  .navlinks a:hover{color:var(--accent-1);}
+  .navlinks{display:none;}
+  @media(min-width:760px){.navlinks{display:flex;}}
+  .navright{display:flex;align-items:center;gap:12px;}
+  .lang-btn{
+    font-family:var(--mono);font-size:12px;padding:6px 12px;border-radius:999px;
+    border:1px solid var(--border);background:var(--card-bg);color:var(--text-1);cursor:pointer;
+    transition:all .15s;
+  }
+  .lang-btn:hover{border-color:var(--accent-2);color:var(--text-0);}
+
+  /* hero */
+  header.hero{padding:96px 0 64px;text-align:center;}
+  .kicker{
+    display:inline-flex;align-items:center;gap:8px;
+    font-family:var(--mono);font-size:12px;color:var(--accent-1);
+    border:1px solid rgba(94,234,212,.3);background:rgba(94,234,212,.06);
+    padding:6px 14px;border-radius:999px;margin-bottom:28px;
+  }
+  h1{
+    font-size:clamp(2.2rem,5.5vw,3.6rem);
+    line-height:1.1;margin:0 0 20px;font-weight:800;letter-spacing:-.02em;
+    background:linear-gradient(115deg,#fff 10%,var(--accent-2) 55%,var(--accent-1) 90%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .subtitle{font-size:clamp(1rem,2vw,1.25rem);color:var(--text-1);max-width:680px;margin:0 auto 36px;}
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin-bottom:44px;}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:13px 26px;border-radius:12px;font-weight:600;font-size:14.5px;
+    text-decoration:none;transition:transform .15s, box-shadow .15s;
+  }
+  .btn-primary{
+    color:#0a0e1a;
+    background:linear-gradient(120deg,var(--accent-1),var(--accent-2));
+    box-shadow:0 0 0 1px rgba(255,255,255,.08) inset, 0 8px 30px -8px rgba(129,140,248,.6);
+  }
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 0 0 1px rgba(255,255,255,.12) inset, 0 12px 36px -6px rgba(129,140,248,.8);}
+  .btn-ghost{
+    color:var(--text-0);background:var(--card-bg);border:1px solid var(--border);
+  }
+  .btn-ghost:hover{border-color:var(--accent-2);transform:translateY(-2px);}
+
+  .badges{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;}
+  .badges img{height:20px;border-radius:4px;}
+
+  .install-box{
+    max-width:560px;margin:40px auto 0;text-align:left;
+    background:rgba(10,14,26,.7);border:1px solid var(--border);border-radius:12px;
+    padding:16px 20px;font-family:var(--mono);font-size:13.5px;
+    box-shadow:0 20px 60px -20px rgba(0,0,0,.6);
+  }
+  .install-box .line{display:flex;gap:10px;color:var(--text-1);}
+  .install-box .line + .line{margin-top:6px;}
+  .install-box .prompt{color:var(--accent-1);}
+  .install-box code{color:var(--text-0);}
+
+  /* sections */
+  section{padding:64px 0;}
+  section.alt{background:linear-gradient(180deg,transparent, rgba(255,255,255,.015) 15%, rgba(255,255,255,.015) 85%, transparent);}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-1);margin:0 0 10px;}
+  h2{font-size:clamp(1.5rem,3vw,2.1rem);margin:0 0 12px;font-weight:750;letter-spacing:-.01em;}
+  .lede{color:var(--text-1);max-width:640px;margin-bottom:40px;}
+
+  .grid{display:grid;gap:16px;}
+  .grid-3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}
+  .grid-2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr));}
+  .grid-4{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));}
+
+  .card{
+    background:var(--card-bg);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:22px;
+    backdrop-filter:blur(10px);
+    transition:transform .2s, border-color .2s, box-shadow .2s;
+    position:relative;
+    overflow:hidden;
+  }
+  .card::before{
+    content:"";position:absolute;inset:0;
+    background:radial-gradient(400px circle at var(--x,50%) var(--y,0%), rgba(129,140,248,.12), transparent 60%);
+    opacity:0;transition:opacity .3s;pointer-events:none;
+  }
+  .card:hover::before{opacity:1;}
+  .card:hover{transform:translateY(-4px);border-color:rgba(148,163,255,.32);box-shadow:0 16px 40px -20px rgba(94,234,212,.25);}
+  .card h3{margin:0 0 8px;font-size:16px;}
+  .card p{margin:0;color:var(--text-1);font-size:14px;}
+  .card .icon{font-size:22px;margin-bottom:12px;display:block;}
+
+  .client-card{text-align:center;padding:20px 12px;}
+  .client-card .icon{font-size:26px;margin-bottom:8px;}
+  .client-card span{font-size:13.5px;color:var(--text-1);}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  thead th{
+    text-align:left;color:var(--text-2);font-weight:600;font-size:12px;
+    text-transform:uppercase;letter-spacing:.06em;padding:10px 14px;
+    border-bottom:1px solid var(--border);
+  }
+  tbody td{padding:12px 14px;border-bottom:1px solid rgba(148,163,255,.08);color:var(--text-1);}
+  tbody tr:hover{background:rgba(255,255,255,.02);}
+  tbody td:first-child{font-family:var(--mono);color:var(--accent-1);white-space:nowrap;}
+  .table-wrap{
+    background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);
+    overflow:hidden;margin-bottom:20px;
+  }
+  .table-wrap h4{margin:0;padding:16px 18px 0;font-size:14px;color:var(--text-0);}
+  .table-wrap table{margin-top:8px;}
+
+  pre{
+    background:rgba(6,9,18,.85);border:1px solid var(--border);border-radius:12px;
+    padding:18px 20px;overflow-x:auto;font-family:var(--mono);font-size:13px;color:#d5dcff;
+    line-height:1.55;
+  }
+  pre .c{color:var(--accent-1);}
+  pre .s{color:#fbbf7a;}
+
+  .steps{counter-reset:step;}
+  .step{display:flex;gap:16px;margin-bottom:22px;}
+  .step .num{
+    counter-increment:step;flex:none;width:34px;height:34px;border-radius:10px;
+    background:linear-gradient(135deg,var(--accent-2),var(--accent-3));
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#0a0e1a;
+  }
+  .step .num::before{content:counter(step);}
+  .step h4{margin:2px 0 6px;font-size:15px;}
+  .step p{margin:0;color:var(--text-1);font-size:14px;}
+
+  .why-list{display:grid;gap:14px;}
+  .why-item{
+    display:flex;gap:14px;background:var(--card-bg);border:1px solid var(--border);
+    border-radius:12px;padding:16px 18px;
+  }
+  .why-item .mark{flex:none;color:var(--accent-1);font-family:var(--mono);font-weight:700;}
+  .why-item h4{margin:0 0 4px;font-size:14.5px;}
+  .why-item p{margin:0;color:var(--text-1);font-size:13.5px;}
+
+  .faq-item{border-bottom:1px solid var(--border);padding:18px 0;}
+  .faq-item summary{cursor:pointer;font-weight:600;font-size:15px;list-style:none;display:flex;justify-content:space-between;align-items:center;}
+  .faq-item summary::-webkit-details-marker{display:none;}
+  .faq-item summary::after{content:"+";color:var(--accent-1);font-size:20px;transition:transform .2s;}
+  .faq-item[open] summary::after{transform:rotate(45deg);}
+  .faq-item p{color:var(--text-1);margin:12px 0 0;font-size:14px;}
+
+  .arch{
+    font-family:var(--mono);font-size:13px;color:var(--text-1);
+    background:rgba(6,9,18,.85);border:1px solid var(--border);border-radius:12px;
+    padding:22px;text-align:center;white-space:pre;overflow-x:auto;
+    line-height:1.7;
+  }
+
+  footer{border-top:1px solid var(--border);padding:48px 0 40px;color:var(--text-2);font-size:13.5px;}
+  footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:24px;}
+  footer a{text-decoration:none;color:var(--text-1);}
+  footer a:hover{color:var(--accent-1);}
+  .footlinks{display:flex;flex-wrap:wrap;gap:18px;}
+
+  ::selection{background:rgba(129,140,248,.4);}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <span class="dot"></span>
+      Kingdee K3Cloud <span class="lang-zh">MCP</span><span class="lang-en">MCP</span>
+    </a>
+    <div class="navlinks">
+      <a href="#features"><span class="lang-zh">功能特性</span><span class="lang-en">Features</span></a>
+      <a href="#tools"><span class="lang-zh">工具列表</span><span class="lang-en">Tools</span></a>
+      <a href="#install"><span class="lang-zh">安装</span><span class="lang-en">Install</span></a>
+      <a href="#why"><span class="lang-zh">为什么是 MCP</span><span class="lang-en">Why MCP</span></a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <div class="navright">
+      <button class="lang-btn" id="langToggle">EN / 中</button>
+      <a class="btn btn-ghost" style="padding:8px 16px;font-size:13px" href="https://github.com/adamzhang1987/kingdee-k3cloud-mcp" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div class="kicker">⚡ <span class="lang-zh">Model Context Protocol Server</span><span class="lang-en">Model Context Protocol Server</span></div>
+    <h1>
+      <span class="lang-zh">让 AI 助手直连金蝶云星空</span>
+      <span class="lang-en">Connect AI Assistants to Kingdee K3Cloud ERP</span>
+    </h1>
+    <p class="subtitle lang-zh">通过 MCP 协议，让 Claude Desktop、Claude Code、Cursor、Cline 等任意支持 MCP 的客户端用自然语言查询和操作金蝶云星空 ERP 系统。</p>
+    <p class="subtitle lang-en">Query and operate your Kingdee K3Cloud ERP in natural language — from Claude Desktop, Claude Code, Cursor, Cline, or any MCP-compatible client.</p>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://pypi.org/project/kingdee-k3cloud-mcp/" target="_blank" rel="noopener">
+        📦 <span class="lang-zh">在 PyPI 上查看</span><span class="lang-en">View on PyPI</span>
+      </a>
+      <a class="btn btn-ghost" href="#install">
+        🚀 <span class="lang-zh">快速开始</span><span class="lang-en">Get Started</span>
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/adamzhang1987/kingdee-k3cloud-skill" target="_blank" rel="noopener">
+        🧩 <span class="lang-zh">配套 Skill</span><span class="lang-en">Companion Skill</span>
+      </a>
+    </div>
+
+    <div class="badges">
+      <img alt="PyPI version" src="https://img.shields.io/pypi/v/kingdee-k3cloud-mcp">
+      <img alt="Python" src="https://img.shields.io/pypi/pyversions/kingdee-k3cloud-mcp">
+      <img alt="License" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg">
+      <img alt="CI" src="https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml/badge.svg">
+    </div>
+
+    <div class="install-box">
+      <div class="line"><span class="prompt">$</span> <code>uvx kingdee-k3cloud-mcp</code></div>
+      <div class="line"><span class="prompt">#</span> <code class="lang-zh" style="color:var(--text-2)">需在 MCP 客户端配置中传入 5 个环境变量</code><code class="lang-en" style="color:var(--text-2)">requires 5 env vars via your MCP client config</code></div>
+    </div>
+  </div>
+</header>
+
+<section id="clients">
+  <div class="wrap">
+    <p class="eyebrow lang-zh">支持的客户端</p>
+    <p class="eyebrow lang-en">Supported Clients</p>
+    <h2 class="lang-zh">兼容所有 MCP 协议客户端</h2>
+    <h2 class="lang-en">Works with any MCP client</h2>
+    <div class="grid grid-4">
+      <div class="card client-card"><span class="icon">🖥️</span><span>Claude Desktop</span></div>
+      <div class="card client-card"><span class="icon">⌨️</span><span>Claude Code</span></div>
+      <div class="card client-card"><span class="icon">🌊</span><span>Cursor / Windsurf</span></div>
+      <div class="card client-card"><span class="icon">🔗</span><span>Cline</span></div>
+      <div class="card client-card"><span class="icon">🍒</span><span>Cherry Studio</span></div>
+      <div class="card client-card"><span class="icon">🐾</span><span>Openclaw</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="features">
+  <div class="wrap">
+    <p class="eyebrow lang-zh">功能特性</p>
+    <p class="eyebrow lang-en">Features</p>
+    <h2 class="lang-zh">为真实 ERP 场景而设计</h2>
+    <h2 class="lang-en">Built for real-world ERP workloads</h2>
+    <p class="lede lang-zh">不止是 API 转发 —— 内置大数据量导出、日期分片、只读模式和会话自愈能力。</p>
+    <p class="lede lang-en">More than an API wrapper — built-in bulk export, date sharding, read-only mode, and self-healing sessions.</p>
+
+    <div class="grid grid-3">
+      <div class="card"><span class="icon">🧰</span>
+        <h3 class="lang-zh">15 个 MCP 工具</h3><h3 class="lang-en">15 MCP Tools</h3>
+        <p class="lang-zh">覆盖查询、导出、新增、提交、审核、反审核、删除、下推等核心操作。</p>
+        <p class="lang-en">Covers query, export, create, submit, audit, unaudit, delete, and push operations.</p>
+      </div>
+      <div class="card"><span class="icon">🧩</span>
+        <h3 class="lang-zh">通用接口设计</h3><h3 class="lang-en">Universal Interface</h3>
+        <p class="lang-zh">单一 <code>form_id</code> 参数支持物料、客户、销售订单等所有表单。</p>
+        <p class="lang-en">A single <code>form_id</code> parameter drives every form — materials, customers, sales orders, and more.</p>
+      </div>
+      <div class="card"><span class="icon">📈</span>
+        <h3 class="lang-zh">高阶查询原语</h3><h3 class="lang-en">High-level Query Primitives</h3>
+        <p class="lang-zh"><code>query_bill_all</code> 自动翻页、<code>query_bill_to_file</code> 流式落盘、<code>query_bill_range</code> 日期分片。</p>
+        <p class="lang-en">Auto-pagination, streaming file export, and date-range sharding — no manual loops.</p>
+      </div>
+      <div class="card"><span class="icon">🔒</span>
+        <h3 class="lang-zh">只读 / 读写模式</h3><h3 class="lang-en">Read-only / Read-write Modes</h3>
+        <p class="lang-zh">可限制 AI 只能查询，从工具列表层面物理防止误操作。</p>
+        <p class="lang-en">Restrict the AI to queries only — write tools are physically absent from the tool list.</p>
+      </div>
+      <div class="card"><span class="icon">♻️</span>
+        <h3 class="lang-zh">自动会话恢复</h3><h3 class="lang-en">Automatic Session Recovery</h3>
+        <p class="lang-zh">长时间运行时自动处理会话超时，无需人工干预。</p>
+        <p class="lang-en">Handles session timeouts automatically during long-running operations.</p>
+      </div>
+      <div class="card"><span class="icon">🌐</span>
+        <h3 class="lang-zh">多传输协议</h3><h3 class="lang-en">Multiple Transports</h3>
+        <p class="lang-zh">支持 stdio（本地）、SSE、streamable-http（远程共享）。</p>
+        <p class="lang-en">Supports stdio (local), SSE, and streamable-http (shared remote deployment).</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="tools">
+  <div class="wrap">
+    <p class="eyebrow lang-zh">工具参考</p>
+    <p class="eyebrow lang-en">Tools Reference</p>
+    <h2 class="lang-zh">可用工具一览</h2>
+    <h2 class="lang-en">Available Tools</h2>
+    <p class="lede lang-zh">所有工具通过 <code>form_id</code> 参数支持任意表单（物料、客户、供应商、销售订单、采购订单等）。</p>
+    <p class="lede lang-en">Every tool accepts a <code>form_id</code> parameter, so one tool works across all forms.</p>
+
+    <div class="table-wrap">
+      <h4 class="lang-zh">查询工具（只读模式下可用）</h4>
+      <h4 class="lang-en">Query Tools (available in read-only mode)</h4>
+      <table>
+        <thead><tr><th class="lang-zh">工具</th><th class="lang-en">Tool</th><th class="lang-zh">说明</th><th class="lang-en">Description</th></tr></thead>
+        <tbody>
+          <tr><td>query_bill</td><td class="lang-zh">查询单据数据（返回二维数组）</td><td class="lang-en">Query bill data (returns 2D array)</td></tr>
+          <tr><td>query_bill_json</td><td class="lang-zh">查询单据数据（返回 JSON，字段名作为 key）</td><td class="lang-en">Query bill data as JSON, keyed by field name</td></tr>
+          <tr><td>count_bill</td><td class="lang-zh">估算查询结果行数，用于大数据量查询前的探测</td><td class="lang-en">Estimate row count before a large query</td></tr>
+          <tr><td>query_bill_all</td><td class="lang-zh">自动翻页查询直到拉完或达到安全上限</td><td class="lang-en">Auto-paginate until complete or a safety cap</td></tr>
+          <tr><td>query_bill_to_file</td><td class="lang-zh">自动翻页并流式写入本地文件（ndjson / csv）</td><td class="lang-en">Auto-paginate and stream to a local file (ndjson / csv)</td></tr>
+          <tr><td>query_bill_range</td><td class="lang-zh">按日期自动分片（月/周/日）+ 翻页</td><td class="lang-en">Auto date-sharding (month/week/day) + pagination</td></tr>
+          <tr><td>view_bill</td><td class="lang-zh">查看单条记录完整详情</td><td class="lang-en">View full detail of a single record</td></tr>
+          <tr><td>query_metadata</td><td class="lang-zh">查询表单字段结构（元数据）</td><td class="lang-en">Query form field structure (metadata)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table-wrap">
+      <h4 class="lang-zh">写入工具（读写模式下可用）</h4>
+      <h4 class="lang-en">Write Tools (available in read-write mode)</h4>
+      <table>
+        <thead><tr><th class="lang-zh">工具</th><th class="lang-en">Tool</th><th class="lang-zh">说明</th><th class="lang-en">Description</th></tr></thead>
+        <tbody>
+          <tr><td>save_bill</td><td class="lang-zh">保存 / 新增单据</td><td class="lang-en">Save / create a bill</td></tr>
+          <tr><td>submit_bill</td><td class="lang-zh">提交单据</td><td class="lang-en">Submit a bill</td></tr>
+          <tr><td>audit_bill</td><td class="lang-zh">审核单据</td><td class="lang-en">Audit a bill</td></tr>
+          <tr><td>unaudit_bill</td><td class="lang-zh">反审核单据</td><td class="lang-en">Unaudit a bill</td></tr>
+          <tr><td>delete_bill</td><td class="lang-zh">删除单据</td><td class="lang-en">Delete a bill</td></tr>
+          <tr><td>execute_operation</td><td class="lang-zh">执行自定义操作（禁用、反禁用等）</td><td class="lang-en">Execute a custom operation (forbid/unforbid, etc.)</td></tr>
+          <tr><td>push_bill</td><td class="lang-zh">下推单据（如销售订单→发货通知单）</td><td class="lang-en">Push a bill downstream (e.g. sales order → delivery notice)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="install">
+  <div class="wrap">
+    <p class="eyebrow lang-zh">安装指南</p>
+    <p class="eyebrow lang-en">Installation</p>
+    <h2 class="lang-zh">四步接入</h2>
+    <h2 class="lang-en">Four steps to connect</h2>
+
+    <div class="steps">
+      <div class="step">
+        <div class="num"></div>
+        <div>
+          <h4 class="lang-zh">通过 uvx 直接运行</h4><h4 class="lang-en">Run directly with uvx</h4>
+          <p class="lang-zh">无需克隆仓库：<code>uvx kingdee-k3cloud-mcp</code></p>
+          <p class="lang-en">No cloning required: <code>uvx kingdee-k3cloud-mcp</code></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <div>
+          <h4 class="lang-zh">申请金蝶后台授权</h4><h4 class="lang-en">Authorize on the Kingdee backend</h4>
+          <p class="lang-zh">在「第三方系统登录授权」中申请应用 ID 和密钥，获取 5 个必填环境变量。</p>
+          <p class="lang-en">Register a third-party integration to obtain the 5 required environment variables.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <div>
+          <h4 class="lang-zh">配置 MCP 客户端</h4><h4 class="lang-en">Configure your MCP client</h4>
+          <p class="lang-zh">在 <code>claude_desktop_config.json</code> 或项目 <code>.mcp.json</code> 中添加 server 配置。</p>
+          <p class="lang-en">Add the server entry to <code>claude_desktop_config.json</code> or your project's <code>.mcp.json</code>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <div>
+          <h4 class="lang-zh">重启客户端</h4><h4 class="lang-en">Restart the client</h4>
+          <p class="lang-zh">重启后即可用自然语言查询和操作金蝶数据。</p>
+          <p class="lang-en">Restart, then query and operate Kingdee data in natural language.</p>
+        </div>
+      </div>
+    </div>
+
+    <pre><span class="c">// claude_desktop_config.json</span>
+{
+  "mcpServers": {
+    "kingdee-k3cloud": {
+      "command": "uvx",
+      "args": ["kingdee-k3cloud-mcp"],
+      "env": {
+        "KD_SERVER_URL": <span class="s">"https://your-server/k3cloud/"</span>,
+        "KD_ACCT_ID": <span class="s">"your_acct_id"</span>,
+        "KD_USERNAME": <span class="s">"your_username"</span>,
+        "KD_APP_ID": <span class="s">"your_app_id"</span>,
+        "KD_APP_SEC": <span class="s">"your_app_secret"</span>,
+        "KD_LCID": <span class="s">"2052"</span>
+      }
+    }
+  }
+}</pre>
+  </div>
+</section>
+
+<section id="why">
+  <div class="wrap">
+    <p class="eyebrow lang-zh">设计理念</p>
+    <p class="eyebrow lang-en">Design Rationale</p>
+    <h2 class="lang-zh">为什么选择 MCP，而非直接调用？</h2>
+    <h2 class="lang-en">Why MCP instead of direct API calls?</h2>
+    <p class="lede lang-zh">让 AI 直接通过 Skill 构造 HTTP 请求访问 ERP 技术上可行，但会引入安全隐患。MCP 的进程隔离模型从根本上解决了这些问题。</p>
+    <p class="lede lang-en">Letting the AI build raw HTTP requests via a Skill is technically possible — but risky. MCP's process-isolation model fixes this at the root.</p>
+
+    <div class="why-list">
+      <div class="why-item"><span class="mark">01</span>
+        <div>
+          <h4 class="lang-zh">凭证不进入 LLM 上下文</h4><h4 class="lang-en">Credentials never enter the LLM context</h4>
+          <p class="lang-zh">凭证通过环境变量注入独立进程，模型永远看不到。</p>
+          <p class="lang-en">Credentials are injected via env vars into an isolated process — the model never sees them.</p>
+        </div>
+      </div>
+      <div class="why-item"><span class="mark">02</span>
+        <div>
+          <h4 class="lang-zh">强制权限边界，而非依赖提示词</h4><h4 class="lang-en">Enforced boundaries, not prompt promises</h4>
+          <p class="lang-zh"><code>--mode readonly</code> 是物理限制：写入工具根本不在工具列表中。</p>
+          <p class="lang-en"><code>--mode readonly</code> is a physical restriction — write tools simply don't exist in the tool list.</p>
+        </div>
+      </div>
+      <div class="why-item"><span class="mark">03</span>
+        <div>
+          <h4 class="lang-zh">网络隔离</h4><h4 class="lang-en">Network isolation</h4>
+          <p class="lang-zh">Server 部署在内网直连 ERP，LLM 云端运行，从不直接接触内部网络。</p>
+          <p class="lang-en">The server runs inside your network; the LLM never touches it directly.</p>
+        </div>
+      </div>
+      <div class="why-item"><span class="mark">04</span>
+        <div>
+          <h4 class="lang-zh">完整的审计链路</h4><h4 class="lang-en">Full audit trail</h4>
+          <p class="lang-zh">每次工具调用都经过 Server，可统一记录操作、参数、时间戳与来源。</p>
+          <p class="lang-en">Every call passes through the server, enabling unified logging of operation, params, and timestamp.</p>
+        </div>
+      </div>
+      <div class="why-item"><span class="mark">05</span>
+        <div>
+          <h4 class="lang-zh">最小权限原则</h4><h4 class="lang-en">Principle of least privilege</h4>
+          <p class="lang-zh">集成用户可在金蝶系统内限制模块与只读权限，MCP Server 原样继承。</p>
+          <p class="lang-en">Kingdee-side user permissions carry straight through — the LLM never needs to know the boundary exists.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="architecture">
+  <div class="wrap">
+    <p class="eyebrow lang-zh">架构</p>
+    <p class="eyebrow lang-en">Architecture</p>
+    <h2 class="lang-zh">工作原理</h2>
+    <h2 class="lang-en">How it works</h2>
+    <div class="arch">AI 助手 (Claude Desktop / Claude Code / Cursor / Cline)
+        │  MCP Protocol
+        ▼
+kingdee-k3cloud-mcp
+        │  Kingdee Web API SDK
+        ▼
+金蝶云星空 K3Cloud</div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <p class="eyebrow">FAQ</p>
+    <h2 class="lang-zh">常见问题</h2>
+    <h2 class="lang-en">Frequently Asked Questions</h2>
+
+    <details class="faq-item" open>
+      <summary><span class="lang-zh">会话超时怎么处理？</span><span class="lang-en">How are session timeouts handled?</span></summary>
+      <p class="lang-zh">Server 内置自动会话恢复机制，长时间运行时检测到超时会自动重新登录，无需人工干预。</p>
+      <p class="lang-en">The server automatically re-authenticates on timeout during long-running sessions — no manual action needed.</p>
+    </details>
+    <details class="faq-item">
+      <summary><span class="lang-zh">只读模式如何开启？</span><span class="lang-en">How do I enable read-only mode?</span></summary>
+      <p class="lang-zh">通过 <code>--mode readonly</code> 参数或 <code>MCP_MODE=readonly</code> 环境变量，服务器只暴露 8 个查询工具。</p>
+      <p class="lang-en">Pass <code>--mode readonly</code> or set <code>MCP_MODE=readonly</code> — only the 8 query tools are exposed.</p>
+    </details>
+    <details class="faq-item">
+      <summary><span class="lang-zh">可以多人共用一个 Server 实例吗？</span><span class="lang-en">Can multiple users share one server instance?</span></summary>
+      <p class="lang-zh">可以，使用 SSE 或 streamable-http 传输部署为远程共享服务，并可通过 <code>MCP_API_KEY</code> 启用鉴权。</p>
+      <p class="lang-en">Yes — deploy with SSE or streamable-http transport, and enable auth via <code>MCP_API_KEY</code>.</p>
+    </details>
+    <details class="faq-item">
+      <summary><span class="lang-zh">如何扩展支持更多单据类型？</span><span class="lang-en">How do I support more bill types?</span></summary>
+      <p class="lang-zh">所有工具通过通用的 <code>form_id</code> 参数工作，无需为新单据类型单独开发工具，直接传入对应 form_id 即可。</p>
+      <p class="lang-en">All tools take a generic <code>form_id</code> — just pass the target form's ID, no new tool needed.</p>
+    </details>
+    <details class="faq-item">
+      <summary><span class="lang-zh">数据量很大时怎么导出？</span><span class="lang-en">How do I export large datasets?</span></summary>
+      <p class="lang-zh">使用 <code>query_bill_to_file</code> 自动翻页并流式写入本地文件（ndjson / csv），适合万行以上导出。</p>
+      <p class="lang-en">Use <code>query_bill_to_file</code> to auto-paginate and stream results to a local file — suited for 10k+ rows.</p>
+    </details>
+    <details class="faq-item">
+      <summary><span class="lang-zh">和 kingdee-k3cloud-skill 是什么关系？</span><span class="lang-en">How does this relate to kingdee-k3cloud-skill?</span></summary>
+      <p class="lang-zh">Skill 负责"什么时候用、怎么用"的知识注入（表单速查、字段验证、工作流），MCP Server 负责实际的工具执行。支持 Skill 机制的 Agent（如 Claude Code）配合使用效果更佳。</p>
+      <p class="lang-en">The Skill injects domain knowledge (form lookups, verified fields, workflows); the MCP server executes the tools. Best combined in Skill-capable agents like Claude Code.</p>
+    </details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <div class="brand" style="margin-bottom:10px;"><span class="dot"></span> Kingdee K3Cloud MCP</div>
+      <p class="lang-zh" style="max-width:320px;">开源 MCP Server，Apache License 2.0。</p>
+      <p class="lang-en" style="max-width:320px;">Open-source MCP Server, licensed under Apache 2.0.</p>
+    </div>
+    <div class="footlinks">
+      <a href="https://github.com/adamzhang1987/kingdee-k3cloud-mcp" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://pypi.org/project/kingdee-k3cloud-mcp/" target="_blank" rel="noopener">PyPI</a>
+      <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">Model Context Protocol</a>
+      <a href="https://www.kingdee.com/" target="_blank" rel="noopener">Kingdee</a>
+      <a href="https://github.com/adamzhang1987/kingdee-k3cloud-skill" target="_blank" rel="noopener"><span class="lang-zh">配套 Skill</span><span class="lang-en">Companion Skill</span></a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var body = document.body;
+    var btn = document.getElementById('langToggle');
+    function setLang(lang){
+      body.classList.toggle('lang-en', lang === 'en');
+      localStorage.setItem('kd-lang', lang);
+      document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+    }
+    var saved = localStorage.getItem('kd-lang') || 'zh';
+    setLang(saved);
+    btn.addEventListener('click', function(){
+      setLang(body.classList.contains('lang-en') ? 'zh' : 'en');
+    });
+
+    // subtle spotlight follow on cards
+    document.querySelectorAll('.card').forEach(function(card){
+      card.addEventListener('mousemove', function(e){
+        var r = card.getBoundingClientRect();
+        card.style.setProperty('--x', (e.clientX - r.left) + 'px');
+        card.style.setProperty('--y', (e.clientY - r.top) + 'px');
+      });
+    });
+  })();
+</script>
+</body>
+</html>
