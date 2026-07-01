@@ -38,10 +38,8 @@
     line-height:1.6;
   }
   a{color:inherit;}
-  .lang-en{display:none;}
-  body.lang-en .lang-zh{display:none;}
-  body.lang-en .lang-en{display:initial;}
-  body.lang-en .lang-en.inline{display:inline;}
+  body:not(.show-en) .lang-en{display:none;}
+  body.show-en .lang-zh{display:none;}
 
   .wrap{max-width:1080px;margin:0 auto;padding:0 24px;}
 
@@ -571,14 +569,14 @@ kingdee-k3cloud-mcp
     var body = document.body;
     var btn = document.getElementById('langToggle');
     function setLang(lang){
-      body.classList.toggle('lang-en', lang === 'en');
+      body.classList.toggle('show-en', lang === 'en');
       localStorage.setItem('kd-lang', lang);
       document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
     }
     var saved = localStorage.getItem('kd-lang') || 'zh';
     setLang(saved);
     btn.addEventListener('click', function(){
-      setLang(body.classList.contains('lang-en') ? 'zh' : 'en');
+      setLang(body.classList.contains('show-en') ? 'zh' : 'en');
     });
 
     // subtle spotlight follow on cards
