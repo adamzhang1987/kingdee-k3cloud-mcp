@@ -525,6 +525,11 @@ kingdee-k3cloud-mcp
       <p class="lang-en">Pass <code>--mode readonly</code> or set <code>MCP_MODE=readonly</code> — only the 8 query tools are exposed.</p>
     </details>
     <details class="faq-item">
+      <summary><span class="lang-zh">数据权限怎么设置？</span><span class="lang-en">How do I configure data permissions?</span></summary>
+      <p class="lang-zh">权限不在 MCP 配置中设置，由 <code>KD_USERNAME</code> 对应的集成用户在金蝶云星空侧的角色决定。注意数据规则过滤是<strong>静默</strong>的——结果行数变少而非报错，可用同一账号登录星空 Web 端对比行数确认，详见 README「数据权限」一节。</p>
+      <p class="lang-en">Permissions aren't configured on the MCP side — they're determined by the integration user (<code>KD_USERNAME</code>)'s role in K3Cloud. Note that data-rule filtering is <strong>silent</strong> (fewer rows, no error); compare against the K3Cloud web UI with the same account to confirm. See the "Data Permissions" section in the README.</p>
+    </details>
+    <details class="faq-item">
       <summary><span class="lang-zh">可以多人共用一个 Server 实例吗？</span><span class="lang-en">Can multiple users share one server instance?</span></summary>
       <p class="lang-zh">可以，使用 SSE 或 streamable-http 传输部署为远程共享服务，并可通过 <code>MCP_API_KEY</code> 启用鉴权。</p>
       <p class="lang-en">Yes — deploy with SSE or streamable-http transport, and enable auth via <code>MCP_API_KEY</code>.</p>

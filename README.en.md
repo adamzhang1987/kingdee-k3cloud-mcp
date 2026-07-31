@@ -236,6 +236,33 @@ Or:
 }
 ```
 
+## Data Permissions
+
+The MCP server itself **does not implement** a data-permission model — it connects to K3Cloud via third-party app authorization, using a fixed identity built from `KD_ACCT_ID` (account set) + `KD_USERNAME` (integration user) + `KD_ORG_NUM` (org, default `0`) in `.env`. Every tool call shares this one identity; there's no per-request user switching. As a result, **what the AI can see is entirely determined by this integration user's permission configuration inside K3Cloud.**
+
+### Configure it in K3Cloud
+
+1. Use a dedicated integration user (see "not recommended to use an admin account" above), go to System Management → User Management → User Authorization
+2. Assign **function permissions**: which forms (e.g. `SAL_SaleOrder`) and operations (query/create/submit/audit) are allowed
+3. Assign **data permissions**: accessible org scope, data rules (filter by customer/department/salesperson, etc.), field-level permissions
+4. To pin queries to a single org by default, set `KD_ORG_NUM`
+
+### Two supplementary gates on the MCP side
+
+These *complement* K3Cloud-side permissions — they don't replace them:
+
+- `--mode readonly` / `MCP_MODE=readonly`: globally disables all write tools
+- `MCP_API_KEY`: connection auth for SSE / streamable-http transports (not applicable to stdio)
+
+### Troubleshooting: two symptoms of permission issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| 500 error, message passed through verbatim | Insufficient function permission | Grant the integration user the missing form/operation permission in K3Cloud |
+| Query succeeds but returns fewer rows or none, **no error** | Data rule filtering applied **silently** | Log in to the K3Cloud web UI with the same integration user and run the same query to compare row counts |
+
+⚠️ The second case is easy to mistake for "there's genuinely no data in this period" — `count_bill` / `query_bill*` return results *after* permission filtering, and can't tell you whether it's "no data" or "filtered out."
+
 ## Debugging
 
 Use the MCP Inspector visual debugging tool:
