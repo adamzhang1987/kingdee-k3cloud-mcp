@@ -3,13 +3,14 @@
 [English](README.en.md) | [中文](README.md)
 
 [![PyPI version](https://img.shields.io/pypi/v/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
+[![Downloads](https://img.shields.io/pypi/dm/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml)
 
-MCP Server for Kingdee K3Cloud ERP. Lets AI assistants (Claude Desktop, Claude Code, Cursor, Cline, Cherry Studio, Openclaw, and any MCP-compatible client) query and operate your Kingdee ERP system through natural language.
+MCP Server for Kingdee K3Cloud ERP. Lets AI assistants (Claude Desktop, Claude Code, Cursor, Windsurf, Cline, Continue, Cherry Studio, and any MCP-compatible client) query and operate your Kingdee ERP system through natural language. A standard PyPI package — `pip install` or `uvx` both work out of the box, with no dependency on a specific package manager.
 
-> **Tip**: Agents that support the Skill mechanism (Claude Code, openclaw, hermes, etc.) can pair this with [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) for a better experience. The Skill injects K3Cloud form field knowledge, common query patterns, and workflow guidance into the agent, significantly reducing trial and error.
+> **Tip**: Connect through an MCP-capable agent platform like [Openclaw](https://docs.openclaw.ai/) to query stock levels or bills via natural language directly from the IM channels it supports (e.g. WeChat, Telegram) — no need to open the K3Cloud web UI. Agents that support the Skill mechanism (Claude Code, Openclaw, etc.) can additionally pair this with [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) for a better experience — the Skill injects K3Cloud form field knowledge, common query patterns, and workflow guidance, significantly reducing trial and error — but it's **not required**: the MCP server works standalone with the full tool set on any MCP client.
 
 ```
 ┌─────────────────────┐    ┌─────────────────────┐    ┌──────────────────┐
@@ -28,21 +29,38 @@ MCP Server for Kingdee K3Cloud ERP. Lets AI assistants (Claude Desktop, Claude C
 - **Read-only / read-write modes**: restrict AI to query-only operations to prevent accidental writes
 - **Automatic session recovery**: handles session timeouts gracefully during long-running sessions
 - **Multiple transport protocols**: stdio (local), SSE, streamable-http (remote / shared)
+- **Standard Python package**: install with `pip install`, requires only Python 3.10+, no mandatory package manager
+- **Type-safe argument validation**: every tool's parameters are type-annotated and validated at call time by FastMCP's automatic Pydantic runtime validation — malformed input is rejected before it ever reaches the K3Cloud API
+
+## 5-Minute Quick Start
+
+1. Install: `pip install kingdee-k3cloud-mcp` (or run without installing via `uvx kingdee-k3cloud-mcp`)
+2. Request an app ID/secret under "Third-party System Login Authorization" in K3Cloud, and get the 5 required environment variables (see [Configuration](#configuration) below)
+3. Add them to your MCP client config (see [Client Configuration](#client-configuration) below) and restart
+4. Start asking in natural language, e.g.:
+   - "Show me last week's audited sales orders, sorted by amount"
+   - "What's the current stock of material XX across all warehouses?"
+   - "Export all March sales outbound bills to CSV"
 
 ## Quick Start
 
-### Option 1: Run with uvx (Recommended)
+### Option 1: pip install (Recommended, no uv required)
 
-No need to clone the repo — run directly via uvx. **Note**: five required environment variables must be set at startup (`KD_SERVER_URL`, `KD_ACCT_ID`, `KD_USERNAME`, `KD_APP_ID`, `KD_APP_SEC`); the server will exit with an error if any are missing.
+```bash
+pip install kingdee-k3cloud-mcp
+kingdee-k3cloud-mcp
+```
 
-**In an MCP client** (recommended — see the "Client Configuration" section below): pass the variables via the client config's `env` field; the `uvx` process reads them automatically.
+A standard PyPI package requiring only Python 3.10+ — no dependency on `uv`. **Note**: five required environment variables must be set at startup (`KD_SERVER_URL`, `KD_ACCT_ID`, `KD_USERNAME`, `KD_APP_ID`, `KD_APP_SEC`); the server will exit with an error if any are missing.
+
+**In an MCP client** (recommended — see the "Client Configuration" section below): pass the variables via the client config's `env` field.
 
 **For manual testing**, provide the environment variables in one of these ways:
 
 ```bash
 # Option A: create a .env file in the current directory (loaded automatically on startup)
 cp .env.example .env   # fill in real values, then run
-uvx kingdee-k3cloud-mcp
+kingdee-k3cloud-mcp
 
 # Option B: export temporarily in the shell
 export KD_SERVER_URL=https://your-server/k3cloud/
@@ -50,10 +68,19 @@ export KD_ACCT_ID=your_acct_id
 export KD_USERNAME=your_username
 export KD_APP_ID=your_app_id
 export KD_APP_SEC=your_app_secret
+kingdee-k3cloud-mcp
+```
+
+### Option 2: Run with uvx (no install step)
+
+No `pip install` needed — `uvx` creates an isolated environment and runs it automatically. Usage is identical to above; just swap `kingdee-k3cloud-mcp` for `uvx kingdee-k3cloud-mcp`:
+
+```bash
+cp .env.example .env
 uvx kingdee-k3cloud-mcp
 ```
 
-### Option 2: Run from Source
+### Option 3: Run from Source
 
 ```bash
 git clone https://github.com/adamzhang1987/kingdee-k3cloud-mcp.git
@@ -127,6 +154,8 @@ Reference: [Kingdee K3Cloud Third-party Integration Configuration Guide](https:/
 
 ## Client Configuration
 
+All configs below use `"command": "uvx"` to run without installing; if you've already run `pip install kingdee-k3cloud-mcp`, change `"command": "uvx"` to `"command": "kingdee-k3cloud-mcp"` and drop the package name from `"args"` (keep other flags like `--mode readonly`) — both are equivalent.
+
 ### Claude Desktop
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
@@ -173,9 +202,40 @@ Create `.mcp.json` in your project directory:
 }
 ```
 
-### Cursor / Windsurf and Other MCP Clients
+### Cursor / Windsurf
 
-Configuration is similar to Claude Desktop. Refer to your client's MCP documentation and use the same `uvx` command and environment variables.
+Cursor: `Settings → MCP → Add new MCP Server`; Windsurf: edit `~/.codeium/windsurf/mcp_config.json`. Both use the same format as Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "kingdee-k3cloud": {
+      "command": "uvx",
+      "args": ["kingdee-k3cloud-mcp"],
+      "env": {
+        "KD_SERVER_URL": "https://your-server/k3cloud/",
+        "KD_ACCT_ID": "your_acct_id",
+        "KD_USERNAME": "your_username",
+        "KD_APP_ID": "your_app_id",
+        "KD_APP_SEC": "your_app_secret",
+        "KD_LCID": "2052"
+      }
+    }
+  }
+}
+```
+
+### Cline / Continue / Cherry Studio and Other MCP Clients
+
+Same `command` + `args` + `env` structure as above — use `uvx kingdee-k3cloud-mcp` and the same 5 environment variables. Where to put it varies by client:
+
+- Cline (VS Code extension): MCP Servers panel → Configure MCP Servers
+- Continue: the `mcpServers` field in `~/.continue/config.json`
+- Cherry Studio: Settings → MCP Servers → Add Server
+
+### Openclaw (IM / mobile access)
+
+[Openclaw](https://docs.openclaw.ai/) is a Skill-capable agent platform that can connect this MCP server to the IM channels it supports (e.g. WeChat, Telegram) — ask a question, get your K3Cloud stock or bill data back. Configuration is the same standard MCP server declaration (`command`/`args`/`env`); see the [Openclaw docs](https://docs.openclaw.ai/) for setup steps. Pairing it with [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) further reduces field-name trial and error. Which IM channels are supported is determined by the Openclaw platform.
 
 ### SSE Mode (Remote / Shared)
 
@@ -284,6 +344,17 @@ Kingdee K3Cloud
 ```
 
 This project uses the official Kingdee Python SDK ([kingdee-cdp-webapi-sdk](https://pypi.org/project/kingdee-cdp-webapi-sdk/)) to communicate with the K3Cloud API, and wraps it as standard MCP tools via [FastMCP](https://github.com/modelcontextprotocol/python-sdk).
+
+## When Is This a Good Fit?
+
+There's more than one way to integrate AI with Kingdee ERP, and different approaches optimize for different things. This project tends to fit best when:
+
+- **You need a long-running, production-grade AI agent**: `--mode readonly` provides a read-only boundary, and the built-in `RetryableK3CloudApiSdk` automatically recovers sessions after timeouts/disconnects during long-running processes — no manual restarts needed
+- **You're querying or exporting large volumes of data**: `query_bill_all` (auto-pagination), `query_bill_to_file` (streaming to disk), and `query_bill_range` (date sharding) are purpose-built for tens-of-thousands-of-rows workloads, so the model doesn't have to hand-roll pagination loops
+- **Your K3Cloud deployment has custom fields or customizations**: the `query_metadata` tool lets the AI discover a form's actual field structure at query time instead of relying on a fixed field list; pairing it with [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) lets you encode your own custom forms, fields, and approval flows as reusable knowledge
+- **You need multiple access paths to coexist**: the same server supports stdio (local IDE), SSE, and streamable-http (remote/shared deployment), and can also be wired into IM channels as an Openclaw tool
+
+If what you want is a quick personal trial and a working first query within minutes, this project supports that too — `pip install` gets you running immediately. Which approach to pick mostly comes down to whether you value "works the moment you install it" or "runs reliably in production over the long haul."
 
 ## Why MCP Instead of Direct API Calls?
 

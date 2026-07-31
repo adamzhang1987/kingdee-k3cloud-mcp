@@ -245,8 +245,8 @@
       <span class="lang-zh">让 AI 助手直连金蝶云星空</span>
       <span class="lang-en">Connect AI Assistants to Kingdee K3Cloud ERP</span>
     </h1>
-    <p class="subtitle lang-zh">通过 MCP 协议，让 Claude Desktop、Claude Code、Cursor、Cline 等任意支持 MCP 的客户端用自然语言查询和操作金蝶云星空 ERP 系统。</p>
-    <p class="subtitle lang-en">Query and operate your Kingdee K3Cloud ERP in natural language — from Claude Desktop, Claude Code, Cursor, Cline, or any MCP-compatible client.</p>
+    <p class="subtitle lang-zh">通过 MCP 协议，让 Claude Desktop、Claude Code、Cursor、Windsurf、Cline、Openclaw 等任意支持 MCP 的客户端用自然语言查询和操作金蝶云星空 ERP 系统——甚至可以在微信、Telegram 里问一句就查库存。</p>
+    <p class="subtitle lang-en">Query and operate your Kingdee K3Cloud ERP in natural language — from Claude Desktop, Claude Code, Cursor, Windsurf, Cline, Openclaw, or any MCP-compatible client. Even from WeChat or Telegram, one message away.</p>
 
     <div class="cta-row">
       <a class="btn btn-primary" href="https://pypi.org/project/kingdee-k3cloud-mcp/" target="_blank" rel="noopener">
@@ -268,7 +268,7 @@
     </div>
 
     <div class="install-box">
-      <div class="line"><span class="prompt">$</span> <code>uvx kingdee-k3cloud-mcp</code></div>
+      <div class="line"><span class="prompt">$</span> <code>pip install kingdee-k3cloud-mcp</code> <code class="lang-zh" style="color:var(--text-2)">或</code><code class="lang-en" style="color:var(--text-2)">or</code> <code>uvx kingdee-k3cloud-mcp</code></div>
       <div class="line"><span class="prompt">#</span> <code class="lang-zh" style="color:var(--text-2)">需在 MCP 客户端配置中传入 5 个环境变量</code><code class="lang-en" style="color:var(--text-2)">requires 5 env vars via your MCP client config</code></div>
     </div>
   </div>
@@ -285,8 +285,13 @@
       <div class="card client-card"><span class="icon">⌨️</span><span>Claude Code</span></div>
       <div class="card client-card"><span class="icon">🌊</span><span>Cursor / Windsurf</span></div>
       <div class="card client-card"><span class="icon">🔗</span><span>Cline</span></div>
+      <div class="card client-card"><span class="icon">▶️</span><span>Continue</span></div>
       <div class="card client-card"><span class="icon">🍒</span><span>Cherry Studio</span></div>
-      <div class="card client-card"><span class="icon">🐾</span><span>Openclaw</span></div>
+      <div class="card client-card">
+        <span class="icon">🐾</span><span>Openclaw</span>
+        <p class="lang-zh" style="margin-top:6px;font-size:13px;color:var(--text-2)">接入微信 / Telegram 等 IM 渠道</p>
+        <p class="lang-en" style="margin-top:6px;font-size:13px;color:var(--text-2)">Bridges to WeChat / Telegram and other IM channels</p>
+      </div>
     </div>
   </div>
 </section>
@@ -330,6 +335,16 @@
         <h3 class="lang-zh">多传输协议</h3><h3 class="lang-en">Multiple Transports</h3>
         <p class="lang-zh">支持 stdio（本地）、SSE、streamable-http（远程共享）。</p>
         <p class="lang-en">Supports stdio (local), SSE, and streamable-http (shared remote deployment).</p>
+      </div>
+      <div class="card"><span class="icon">📦</span>
+        <h3 class="lang-zh">标准 Python 包</h3><h3 class="lang-en">Standard Python Package</h3>
+        <p class="lang-zh"><code>pip install</code> 即可安装，仅需 Python 3.10+，无强制包管理器依赖。</p>
+        <p class="lang-en">Install with <code>pip install</code>, Python 3.10+ only — no mandatory package manager.</p>
+      </div>
+      <div class="card"><span class="icon">🛡️</span>
+        <h3 class="lang-zh">类型安全校验</h3><h3 class="lang-en">Type-safe Validation</h3>
+        <p class="lang-zh">工具入参基于类型注解，由 FastMCP 自动做 Pydantic 运行时校验。</p>
+        <p class="lang-en">Tool arguments are type-annotated and validated at call time via FastMCP's automatic Pydantic runtime checks.</p>
       </div>
     </div>
   </div>
@@ -392,9 +407,9 @@
       <div class="step">
         <div class="num"></div>
         <div>
-          <h4 class="lang-zh">通过 uvx 直接运行</h4><h4 class="lang-en">Run directly with uvx</h4>
-          <p class="lang-zh">无需克隆仓库：<code>uvx kingdee-k3cloud-mcp</code></p>
-          <p class="lang-en">No cloning required: <code>uvx kingdee-k3cloud-mcp</code></p>
+          <h4 class="lang-zh">安装</h4><h4 class="lang-en">Install</h4>
+          <p class="lang-zh"><code>pip install kingdee-k3cloud-mcp</code>，或免安装直接跑：<code>uvx kingdee-k3cloud-mcp</code>。</p>
+          <p class="lang-en"><code>pip install kingdee-k3cloud-mcp</code>, or run without installing: <code>uvx kingdee-k3cloud-mcp</code>.</p>
         </div>
       </div>
       <div class="step">
@@ -440,6 +455,17 @@
     }
   }
 }</pre>
+
+    <p class="eyebrow lang-zh" style="margin-top:36px">装好之后</p>
+    <p class="eyebrow lang-en" style="margin-top:36px">Once it's running</p>
+    <ul style="line-height:1.9">
+      <li class="lang-zh">"查一下上周已审核的销售订单，按金额排序"</li>
+      <li class="lang-en">"Show me last week's audited sales orders, sorted by amount"</li>
+      <li class="lang-zh">"XX 物料现在各仓库库存分别是多少"</li>
+      <li class="lang-en">"What's the current stock of material XX across all warehouses?"</li>
+      <li class="lang-zh">"把 3 月份所有销售出库单导出成 csv"</li>
+      <li class="lang-en">"Export all March sales outbound bills to CSV"</li>
+    </ul>
   </div>
 </section>
 
@@ -523,6 +549,16 @@ kingdee-k3cloud-mcp
       <summary><span class="lang-zh">只读模式如何开启？</span><span class="lang-en">How do I enable read-only mode?</span></summary>
       <p class="lang-zh">通过 <code>--mode readonly</code> 参数或 <code>MCP_MODE=readonly</code> 环境变量，服务器只暴露 8 个查询工具。</p>
       <p class="lang-en">Pass <code>--mode readonly</code> or set <code>MCP_MODE=readonly</code> — only the 8 query tools are exposed.</p>
+    </details>
+    <details class="faq-item">
+      <summary><span class="lang-zh">必须用 uv 吗？</span><span class="lang-en">Do I have to use uv?</span></summary>
+      <p class="lang-zh">不需要。这是一个标准 PyPI 包，<code>pip install kingdee-k3cloud-mcp</code> 即可安装运行，仅需 Python 3.10+。<code>uvx</code> 只是一种免安装的可选便捷方式，不是必须依赖。</p>
+      <p class="lang-en">No. It's a standard PyPI package — <code>pip install kingdee-k3cloud-mcp</code> works with just Python 3.10+. <code>uvx</code> is an optional install-free convenience, not a requirement.</p>
+    </details>
+    <details class="faq-item">
+      <summary><span class="lang-zh">必须安装配套 Skill 吗？</span><span class="lang-en">Do I have to install the companion Skill?</span></summary>
+      <p class="lang-zh">不需要。MCP Server 独立运行即可使用全部 15 个工具，且内置 <code>query_metadata</code> 让 AI 自行发现表单字段。Skill 是可选增强，能进一步减少字段试错、封装企业自定义字段和工作流知识，配合支持 Skill 机制的 Agent（如 Claude Code、Openclaw）效果更佳。</p>
+      <p class="lang-en">No. The MCP server works standalone with all 15 tools, and includes <code>query_metadata</code> so the AI can discover form fields itself. The Skill is an optional enhancement that further reduces trial-and-error and encodes your custom fields/workflows — best combined with Skill-capable agents like Claude Code or Openclaw.</p>
     </details>
     <details class="faq-item">
       <summary><span class="lang-zh">数据权限怎么设置？</span><span class="lang-en">How do I configure data permissions?</span></summary>

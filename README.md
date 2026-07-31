@@ -3,13 +3,14 @@
 [English](README.en.md) | [中文](README.md)
 
 [![PyPI version](https://img.shields.io/pypi/v/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
+[![Downloads](https://img.shields.io/pypi/dm/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml)
 
-金蝶云星空 K3Cloud MCP Server，让 AI 助手（Claude Desktop、Claude Code、Cursor、Cline、Cherry Studio、Openclaw 等任意支持 MCP 协议的客户端）通过自然语言查询和操作金蝶 ERP 系统。
+金蝶云星空 K3Cloud MCP Server，让 AI 助手（Claude Desktop、Claude Code、Cursor、Windsurf、Cline、Continue、Cherry Studio 等任意支持 MCP 协议的客户端）通过自然语言查询和操作金蝶 ERP 系统。标准 PyPI 包，`pip install` 或 `uvx` 均可直接运行，无需绑定特定包管理器。
 
-> **提示**：支持 Skill 机制的 AI Agent（Claude Code、openclaw、hermes 等）可配合 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 获得更佳体验。Skill 为 Agent 注入金蝶表单字段、常用查询模式和工作流知识，大幅减少试错次数。
+> **提示**：通过 [Openclaw](https://docs.openclaw.ai/) 等支持 MCP 的 Agent 平台接入后，可在其支持的 IM 渠道（如微信、Telegram）中用自然语言查库存、查单据，无需打开金蝶网页端。支持 Skill 机制的 AI Agent（Claude Code、Openclaw 等）还可配合 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 获得更佳体验——Skill 为 Agent 注入金蝶表单字段、常用查询模式和工作流知识，大幅减少试错次数，但**并非必需**，MCP Server 本身即可独立配合任意 MCP 客户端使用全部工具。
 
 ```
 ┌─────────────────────┐    ┌─────────────────────┐    ┌──────────────────┐
@@ -30,21 +31,38 @@ MCP Server for Kingdee K3Cloud ERP. Connect AI assistants to your ERP system via
 - **只读/读写模式**：可限制 AI 只能查询，防止误操作
 - **自动会话恢复**：长时间运行时自动处理会话超时，无需人工干预
 - **多传输协议**：支持 stdio（本地）、SSE、streamable-http（远程共享）
+- **标准 Python 包**：`pip install` 即可安装，仅需 Python 3.10+，无强制包管理器依赖
+- **类型安全的入参校验**：所有工具入参基于类型注解，由 FastMCP 在调用时自动做 Pydantic 运行时校验，参数结构错误会在到达金蝶 API 之前被拦截
+
+## 5 分钟快速开始
+
+1. 安装：`pip install kingdee-k3cloud-mcp`（或用 `uvx kingdee-k3cloud-mcp` 免安装直接跑）
+2. 在金蝶云星空「第三方系统登录授权」中申请应用 ID/密钥，拿到 5 个必填环境变量（见下方[配置](#配置)）
+3. 把变量填进你的 MCP 客户端配置（见下方[客户端配置](#客户端配置)），保存重启
+4. 直接用自然语言提问，例如：
+   - 「查一下上周已审核的销售订单，按金额排序」
+   - 「XX 物料现在各仓库库存分别是多少」
+   - 「把 3 月份所有销售出库单导出成 csv」
 
 ## 快速开始
 
-### 方式一：uvx 直接运行（推荐）
+### 方式一：pip 安装（推荐，无需 uv）
 
-无需克隆仓库，直接通过 uvx 运行。**注意**：服务启动时必须提供 5 个必填环境变量（`KD_SERVER_URL`、`KD_ACCT_ID`、`KD_USERNAME`、`KD_APP_ID`、`KD_APP_SEC`），否则会报错退出。
+```bash
+pip install kingdee-k3cloud-mcp
+kingdee-k3cloud-mcp
+```
 
-**在 MCP 客户端中使用**（推荐，见下方"客户端配置"章节）：通过客户端配置的 `env` 字段传入，`uvx` 进程会自动读取。
+标准 PyPI 包，仅需 Python 3.10+，不依赖 `uv`。**注意**：服务启动时必须提供 5 个必填环境变量（`KD_SERVER_URL`、`KD_ACCT_ID`、`KD_USERNAME`、`KD_APP_ID`、`KD_APP_SEC`），否则会报错退出。
+
+**在 MCP 客户端中使用**（推荐，见下方"客户端配置"章节）：通过客户端配置的 `env` 字段传入。
 
 **手动测试时**，可通过以下任一方式提供环境变量：
 
 ```bash
 # 方式 A：在当前目录创建 .env 文件（服务启动时自动加载）
 cp .env.example .env   # 填写真实值后再运行
-uvx kingdee-k3cloud-mcp
+kingdee-k3cloud-mcp
 
 # 方式 B：在命令行临时导出
 export KD_SERVER_URL=https://your-server/k3cloud/
@@ -52,10 +70,19 @@ export KD_ACCT_ID=your_acct_id
 export KD_USERNAME=your_username
 export KD_APP_ID=your_app_id
 export KD_APP_SEC=your_app_secret
+kingdee-k3cloud-mcp
+```
+
+### 方式二：uvx 直接运行（免安装）
+
+无需 `pip install`，`uvx` 会自动创建隔离环境并运行，用法与上面完全一致，把 `kingdee-k3cloud-mcp` 换成 `uvx kingdee-k3cloud-mcp` 即可：
+
+```bash
+cp .env.example .env
 uvx kingdee-k3cloud-mcp
 ```
 
-### 方式二：从源码运行
+### 方式三：从源码运行
 
 ```bash
 git clone https://github.com/adamzhang1987/kingdee-k3cloud-mcp.git
@@ -137,6 +164,8 @@ uvx kingdee-k3cloud-mcp
 
 ## 客户端配置
 
+以下所有客户端配置都用 `"command": "uvx"` 免安装启动；若已 `pip install kingdee-k3cloud-mcp`，把 `"command": "uvx"` 改成 `"command": "kingdee-k3cloud-mcp"` 并删掉 `"args"` 中的包名（保留其余参数如 `--mode readonly`）即可，两种方式效果完全一致。
+
 ### Claude Desktop
 
 编辑 `~/Library/Application Support/Claude/claude_desktop_config.json`（macOS）：
@@ -183,9 +212,40 @@ uvx kingdee-k3cloud-mcp
 }
 ```
 
-### Cursor / Windsurf 及其他 MCP 客户端
+### Cursor / Windsurf
 
-配置方式与 Claude Desktop 类似，参考各客户端的 MCP 配置文档，使用相同的 `uvx` 命令和环境变量。
+Cursor：`Settings → MCP → Add new MCP Server`；Windsurf：编辑 `~/.codeium/windsurf/mcp_config.json`。两者配置格式与 Claude Desktop 一致：
+
+```json
+{
+  "mcpServers": {
+    "kingdee-k3cloud": {
+      "command": "uvx",
+      "args": ["kingdee-k3cloud-mcp"],
+      "env": {
+        "KD_SERVER_URL": "https://your-server/k3cloud/",
+        "KD_ACCT_ID": "your_acct_id",
+        "KD_USERNAME": "your_username",
+        "KD_APP_ID": "your_app_id",
+        "KD_APP_SEC": "your_app_secret",
+        "KD_LCID": "2052"
+      }
+    }
+  }
+}
+```
+
+### Cline / Continue / Cherry Studio 及其他 MCP 客户端
+
+配置结构与上面完全一致——`command` + `args` + `env`，填入相同的 `uvx kingdee-k3cloud-mcp` 与 5 个环境变量即可。具体填写位置参考各客户端自己的 MCP 配置文档：
+
+- Cline（VS Code 插件）：MCP Servers 面板 → Configure MCP Servers
+- Continue：`~/.continue/config.json` 的 `mcpServers` 字段
+- Cherry Studio：设置 → MCP 服务器 → 添加服务器
+
+### Openclaw（IM / 移动端接入）
+
+[Openclaw](https://docs.openclaw.ai/) 是支持 Skill 机制的 Agent 平台，可将本 MCP Server 接入其支持的 IM 渠道（如微信、Telegram），实现"发一句话查金蝶库存/单据"。配置方式同样是标准 MCP Server 声明（`command`/`args`/`env`），具体接入步骤参考 [Openclaw 官方文档](https://docs.openclaw.ai/)；配合 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 使用可进一步减少字段试错。IM 渠道的具体支持范围由 Openclaw 平台决定。
 
 ### SSE 模式（远程共享）
 
@@ -294,6 +354,17 @@ kingdee-k3cloud-mcp（本项目）
 ```
 
 本项目使用官方金蝶 Python SDK（[kingdee-cdp-webapi-sdk](https://pypi.org/project/kingdee-cdp-webapi-sdk/)）与 K3Cloud API 通信，并通过 [FastMCP](https://github.com/modelcontextprotocol/python-sdk) 将其封装为标准 MCP 工具。
+
+## 适用场景
+
+金蝶 ERP 的 MCP 集成方案不止一种，各有侧重。本项目更适合以下场景：
+
+- **需要长期稳定运行的生产环境 AI Agent**：`--mode readonly` 提供只读边界，`RetryableK3CloudApiSdk` 内置会话自动恢复（应对长时间运行的超时/断连），无需人工值守重启
+- **数据量较大的查询/导出需求**：`query_bill_all`（自动翻页）、`query_bill_to_file`（流式落盘）、`query_bill_range`（日期分片）三个高阶原语专门处理万行级数据，避免让模型手写翻页循环
+- **有自定义字段 / 二次开发的金蝶部署**：`query_metadata` 工具可让 AI 在查询前自行发现表单的实际字段结构，不依赖预置字段表；配合 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 还可把企业专属的表单/字段/审批流封装成可复用的知识
+- **需要多种接入方式共存**：同一个 Server 支持 stdio（本地 IDE）、SSE、streamable-http（远程共享部署），也可作为 Openclaw 工具接入 IM 渠道
+
+如果你的场景是个人轻量试用、追求几分钟内跑通第一次查询，本项目同样支持 `pip install` 一步安装、开箱即用；具体选哪个方案，取决于你更看重「装上就能用」还是「长期在生产环境里稳定跑」。
 
 ## 为什么选择 MCP 而非直接调用？
 
