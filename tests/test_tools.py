@@ -7,6 +7,7 @@ Covers: query_bill, query_bill_json, count_bill, view_bill, query_metadata,
 """
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -28,6 +29,22 @@ from kingdee_k3cloud_mcp.server import (
     submit_bill,
     unaudit_bill,
     view_bill,
+)
+
+# 认证失败响应（MsgCode=1），与真实响应一致
+EXPIRED_BILLQUERY = json.dumps(
+    {
+        "Result": {
+            "ResponseStatus": {
+                "ErrorCode": 500,
+                "IsSuccess": False,
+                "Errors": [
+                    {"FieldName": None, "Message": "会话信息已丢失，请重新登录", "DIndex": 0}
+                ],
+                "MsgCode": 1,
+            }
+        }
+    }
 )
 
 # ---------------------------------------------------------------------------
@@ -446,6 +463,15 @@ class TestPushBill:
 
 
 class TestSetup:
+    @staticmethod
+    def _set_env(monkeypatch):
+        monkeypatch.setenv("KD_SERVER_URL", "http://example.com")
+        monkeypatch.setenv("KD_ACCT_ID", "acct")
+        monkeypatch.setenv("KD_USERNAME", "user")
+        monkeypatch.setenv("KD_APP_ID", "appid")
+        monkeypatch.setenv("KD_APP_SEC", "secret")
+        monkeypatch.delenv("KD_STARTUP_CHECK", raising=False)
+
     def test_missing_env_vars_raises_runtime_error(self, monkeypatch):
         for key in ["KD_SERVER_URL", "KD_ACCT_ID", "KD_USERNAME", "KD_APP_ID", "KD_APP_SEC"]:
             monkeypatch.delenv(key, raising=False)
@@ -463,12 +489,48 @@ class TestSetup:
 
         mock_sdk_instance = MagicMock()
         with patch(
-            "kingdee_k3cloud_mcp.server.RetryableK3CloudApiSdk", return_value=mock_sdk_instance
+            "kingdee_k3cloud_mcp.server.DiagnosticK3CloudApiSdk", return_value=mock_sdk_instance
         ):
             setup()
 
         assert server_mod.api_sdk is mock_sdk_instance
         mock_sdk_instance.InitConfig.assert_called_once()
+
+    def test_startup_check_runs_by_default(self, monkeypatch):
+        self._set_env(monkeypatch)
+        with (
+            patch("kingdee_k3cloud_mcp.server.DiagnosticK3CloudApiSdk", return_value=MagicMock()),
+            patch("kingdee_k3cloud_mcp.server._startup_credential_check") as mock_check,
+        ):
+            setup()
+        mock_check.assert_called_once()
+
+    def test_startup_check_disabled_by_env(self, monkeypatch):
+        self._set_env(monkeypatch)
+        monkeypatch.setenv("KD_STARTUP_CHECK", "0")
+        with (
+            patch("kingdee_k3cloud_mcp.server.DiagnosticK3CloudApiSdk", return_value=MagicMock()),
+            patch("kingdee_k3cloud_mcp.server._startup_credential_check") as mock_check,
+        ):
+            setup()
+        mock_check.assert_not_called()
+
+    def test_startup_check_never_blocks_startup(self, monkeypatch):
+        """探针抛异常时必须被吞掉——自检绝不能让 server 起不来。"""
+        self._set_env(monkeypatch)
+        mock_sdk = MagicMock()
+        mock_sdk.ExecuteBillQuery.side_effect = RuntimeError("network down")
+        with patch("kingdee_k3cloud_mcp.server.DiagnosticK3CloudApiSdk", return_value=mock_sdk):
+            setup()  # 不抛异常即为通过
+
+    def test_startup_check_logs_error_on_bad_credentials(self, monkeypatch, caplog):
+        self._set_env(monkeypatch)
+        mock_sdk = MagicMock()
+        mock_sdk.ExecuteBillQuery.return_value = EXPIRED_BILLQUERY
+        with patch("kingdee_k3cloud_mcp.server.DiagnosticK3CloudApiSdk", return_value=mock_sdk):
+            caplog.set_level(logging.ERROR)
+            setup()
+        assert "凭据校验失败" in caplog.text
 
     def test_readonly_mode_set_by_main(self, monkeypatch):
         monkeypatch.setenv("KD_SERVER_URL", "http://example.com")
@@ -478,7 +540,7 @@ class TestSetup:
         monkeypatch.setenv("KD_APP_SEC", "secret")
 
         with (
-            patch("kingdee_k3cloud_mcp.server.RetryableK3CloudApiSdk", return_value=MagicMock()),
+            patch("kingdee_k3cloud_mcp.server.DiagnosticK3CloudApiSdk", return_value=MagicMock()),
             patch("sys.argv", ["server", "--mode", "readonly"]),
             patch("kingdee_k3cloud_mcp.server.mcp") as mock_mcp,
         ):

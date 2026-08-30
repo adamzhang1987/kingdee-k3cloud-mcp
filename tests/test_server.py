@@ -1,7 +1,6 @@
 import json
 import os
 import tempfile
-import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -9,9 +8,11 @@ from k3cloud_webapi_sdk.main import K3CloudApiSdk
 
 import kingdee_k3cloud_mcp.server as _server_mod
 from kingdee_k3cloud_mcp.server import (
-    RetryableK3CloudApiSdk,
-    _check_expired,
-    _is_session_expired,
+    AUTH_ERROR_KEY,
+    DiagnosticK3CloudApiSdk,
+    _auth_error_envelope,
+    _check_auth_failure,
+    _is_auth_failure,
     _iter_date_chunks,
     _wrap_query_result,
     query_bill_all,
@@ -36,6 +37,52 @@ _EXPIRED_DICT = {
     }
 }
 
+
+def _biz_error(msg_code: int, message: str) -> str:
+    """业务错误响应。MsgCode 与消息取自第 3 轮真实实测，见 docs/session-auth-experiments.md。"""
+    return json.dumps(
+        {
+            "Result": {
+                "ResponseStatus": {
+                    "ErrorCode": 500,
+                    "IsSuccess": False,
+                    "Errors": [{"FieldName": None, "Message": message, "DIndex": 0}],
+                    "SuccessEntitys": [],
+                    "SuccessMessages": [],
+                    "MsgCode": msg_code,
+                }
+            }
+        }
+    )
+
+
+# 实测：不存在的表单 MsgCode=4、不存在的字段 MsgCode=9、参数为空 MsgCode=8，
+# 三者均不为 1 —— 这正是 MsgCode==1 可以作为认证失败判据的依据。
+BIZ_ERROR_FORM = _biz_error(4, "标识为“NO_SUCH_FORM”的业务对象不存在，或者被删除。")
+BIZ_ERROR_FIELD = _biz_error(9, "元数据中标识为FNoSuchField的字段不存在")
+BIZ_ERROR_PARAM = _biz_error(8, "data数据包中的参数FieldKeys的值不能为空。")
+
+# ResponseStatus 挂在顶层而非 Result 下的形态
+EXPIRED_TOPLEVEL = json.dumps(
+    {
+        "ResponseStatus": {
+            "ErrorCode": 500,
+            "IsSuccess": False,
+            "Errors": [{"FieldName": None, "Message": "会话信息已丢失，请重新登录", "DIndex": 0}],
+            "MsgCode": 1,
+        }
+    }
+)
+
+# 会让旧实现抛 AttributeError 的畸形响应（均为实测复现过的形态）
+MALFORMED_RESPONSES = [
+    '{"Result":{"ResponseStatus":null}}',
+    '{"Result":[{"a":1}]}',
+    '{"Result":{"ResponseStatus":{"Errors":["会话信息已丢失"]}}}',
+    '{"Result":{"ResponseStatus":{"Errors":null}}}',
+]
+
+
 # BillQuery: plain JSON object
 EXPIRED_BILLQUERY = json.dumps(_EXPIRED_DICT)
 SUCCESS_BILLQUERY = json.dumps([{"FNumber": "MAT001", "FName": "测试物料"}])
@@ -46,186 +93,180 @@ SUCCESS_EXECUTEBILLQUERY = json.dumps([["MAT001", "测试物料"]])
 
 
 # ---------------------------------------------------------------------------
-# _check_expired
+# _check_auth_failure
 # ---------------------------------------------------------------------------
 
 
-class TestCheckExpired(unittest.TestCase):
+class TestCheckAuthFailure(unittest.TestCase):
     def test_dict_session_expired(self):
-        self.assertTrue(_check_expired(_EXPIRED_DICT))
+        self.assertTrue(_check_auth_failure(_EXPIRED_DICT))
 
     def test_list_wrapped_session_expired(self):
         """ExecuteBillQuery wraps response in [[...]]."""
-        self.assertTrue(_check_expired([[_EXPIRED_DICT]]))
+        self.assertTrue(_check_auth_failure([[_EXPIRED_DICT]]))
 
     def test_success_dict_returns_false(self):
-        self.assertFalse(_check_expired({"FNumber": "MAT001", "FName": "测试物料"}))
+        self.assertFalse(_check_auth_failure({"FNumber": "MAT001", "FName": "测试物料"}))
 
     def test_empty_list_returns_false(self):
-        self.assertFalse(_check_expired([]))
+        self.assertFalse(_check_auth_failure([]))
 
     def test_non_container_returns_false(self):
-        self.assertFalse(_check_expired("some string"))
-        self.assertFalse(_check_expired(None))
-        self.assertFalse(_check_expired(42))
+        self.assertFalse(_check_auth_failure("some string"))
+        self.assertFalse(_check_auth_failure(None))
+        self.assertFalse(_check_auth_failure(42))
+
+    def test_toplevel_response_status_detected(self):
+        """ResponseStatus 在顶层而非 Result 下时也必须识别。"""
+        self.assertTrue(_is_auth_failure(EXPIRED_TOPLEVEL))
+
+    def test_business_errors_not_flagged(self):
+        """MsgCode 4/9/8 的业务错误不得被误判为认证失败。"""
+        for raw in (BIZ_ERROR_FORM, BIZ_ERROR_FIELD, BIZ_ERROR_PARAM):
+            self.assertFalse(_is_auth_failure(raw), raw)
+
+    def test_malformed_responses_do_not_crash(self):
+        """旧实现对这些形态会抛 AttributeError；现在必须稳定返回 bool。"""
+        for raw in MALFORMED_RESPONSES:
+            result = _is_auth_failure(raw)
+            self.assertIsInstance(result, bool, raw)
+
+    def test_envelope_recognised(self):
+        """已包装的 envelope 仍应被识别为认证失败（供各调用点提前返回）。"""
+        self.assertTrue(_is_auth_failure(_auth_error_envelope(EXPIRED_BILLQUERY)))
 
 
 # ---------------------------------------------------------------------------
-# _is_session_expired
+# _is_auth_failure
 # ---------------------------------------------------------------------------
 
 
-class TestIsSessionExpired(unittest.TestCase):
+class TestIsAuthFailure(unittest.TestCase):
     def test_billquery_expired(self):
-        self.assertTrue(_is_session_expired(EXPIRED_BILLQUERY))
+        self.assertTrue(_is_auth_failure(EXPIRED_BILLQUERY))
 
     def test_executebillquery_expired(self):
         """Must also detect session expiry in the [[...]] wrapped format."""
-        self.assertTrue(_is_session_expired(EXPIRED_EXECUTEBILLQUERY))
+        self.assertTrue(_is_auth_failure(EXPIRED_EXECUTEBILLQUERY))
 
     def test_billquery_success(self):
-        self.assertFalse(_is_session_expired(SUCCESS_BILLQUERY))
+        self.assertFalse(_is_auth_failure(SUCCESS_BILLQUERY))
 
     def test_executebillquery_success(self):
-        self.assertFalse(_is_session_expired(SUCCESS_EXECUTEBILLQUERY))
+        self.assertFalse(_is_auth_failure(SUCCESS_EXECUTEBILLQUERY))
 
     def test_invalid_json_returns_false(self):
-        self.assertFalse(_is_session_expired("not json at all"))
+        self.assertFalse(_is_auth_failure("not json at all"))
 
     def test_empty_string_returns_false(self):
-        self.assertFalse(_is_session_expired(""))
+        self.assertFalse(_is_auth_failure(""))
 
     def test_unicode_escaped_json(self):
         """Server may return unicode-escaped Chinese; json.loads decodes it back."""
         escaped = '{"Result":{"ResponseStatus":{"Errors":[{"Message":"\\u4f1a\\u8bdd\\u4fe1\\u606f\\u5df2\\u4e22\\u5931\\uff0c\\u8bf7\\u91cd\\u65b0\\u767b\\u5f55"}]}}}'
-        self.assertTrue(_is_session_expired(escaped))
+        self.assertTrue(_is_auth_failure(escaped))
 
 
 # ---------------------------------------------------------------------------
-# RetryableK3CloudApiSdk.Execute
+# DiagnosticK3CloudApiSdk.Execute
 # ---------------------------------------------------------------------------
 
 
-_INIT_KWARGS = dict(
-    acct_id="test_acct",
-    user_name="test_user",
-    app_id="test_app_id",
-    app_secret="test_app_sec",
-    server_url="http://test.example.com",
-)
+class TestDiagnosticK3CloudApiSdk(unittest.TestCase):
+    """认证失败只标注、不重试。
 
+    早期版本在 Execute 里实现了会话恢复（清 SID + 重发 + 300 秒冷却）。
+    实证测试证明该机制针对的是不存在的故障模式，已整体删除；
+    这里的测试守住「不再产生第二次请求」这条核心不变量。
+    """
 
-class TestRetryableK3CloudApiSdk(unittest.TestCase):
     def setUp(self):
-        self.sdk = RetryableK3CloudApiSdk("http://test.example.com")
-        self.sdk.cookiesStore.SID = "old-session-id"
-        self.sdk.cookiesStore.cookies = {"k": MagicMock()}
+        self.sdk = DiagnosticK3CloudApiSdk("http://test.example.com")
+        self.sdk.cookiesStore.SID = "existing-session-id"
 
     def _patch_parent_execute(self, side_effect):
-        """Patch K3CloudApiSdk.Execute (the super() target)."""
         return patch.object(K3CloudApiSdk, "Execute", side_effect=side_effect)
 
-    # -- normal path ---------------------------------------------------------
+    # -- 正常路径 -----------------------------------------------------------
 
-    def test_success_returns_result(self):
+    def test_success_returns_result_unchanged(self):
         with self._patch_parent_execute([SUCCESS_BILLQUERY]) as mock_exec:
             result = self.sdk.Execute("some.service")
 
         self.assertEqual(result, SUCCESS_BILLQUERY)
         mock_exec.assert_called_once()
 
-    def test_non_string_result_no_extra_call(self):
-        """If parent returns a non-str, no session check or extra call."""
+    def test_non_string_result_untouched(self):
         with self._patch_parent_execute([{"unexpected": "dict"}]) as mock_exec:
             result = self.sdk.Execute("some.service")
 
         self.assertEqual(result, {"unexpected": "dict"})
         mock_exec.assert_called_once()
 
-    # -- session expired, outside cooldown -----------------------------------
+    def test_business_error_not_wrapped(self):
+        """业务错误（MsgCode 4/8/9）不得被当成认证失败包装。"""
+        for raw in (BIZ_ERROR_FORM, BIZ_ERROR_FIELD, BIZ_ERROR_PARAM):
+            with self._patch_parent_execute([raw]):
+                self.assertEqual(self.sdk.Execute("some.service"), raw)
 
-    def test_expired_returns_expired_result(self):
-        """Execute always returns the original expired response — never a retry success."""
-        with self._patch_parent_execute([EXPIRED_BILLQUERY, SUCCESS_BILLQUERY]):
-            result = self.sdk.Execute("some.service")
+    # -- 认证失败 -----------------------------------------------------------
 
-        self.assertEqual(result, EXPIRED_BILLQUERY)
-
-    @patch("time.monotonic", return_value=1000.0)
-    def test_expired_outside_cooldown_makes_two_calls(self, _):
-        """First call gets expired; second is fire-and-forget to re-establish SID."""
+    def test_auth_failure_makes_only_one_call(self):
+        """核心不变量：认证失败绝不触发第二次请求。"""
         with self._patch_parent_execute([EXPIRED_BILLQUERY, SUCCESS_BILLQUERY]) as mock_exec:
             self.sdk.Execute("some.service")
 
-        self.assertEqual(mock_exec.call_count, 2)
-
-    @patch("time.monotonic", return_value=1000.0)
-    def test_expired_outside_cooldown_clears_cookiestore(self, _):
-        """cookiesStore is replaced with a fresh instance (SID and cookies cleared)."""
-        original_store = self.sdk.cookiesStore
-
-        with self._patch_parent_execute([EXPIRED_BILLQUERY, SUCCESS_BILLQUERY]):
-            self.sdk.Execute("some.service")
-
-        self.assertIsNot(self.sdk.cookiesStore, original_store)
-        self.assertEqual(self.sdk.cookiesStore.SID, "")
-        self.assertEqual(self.sdk.cookiesStore.cookies, {})
-
-    @patch("time.monotonic", return_value=1000.0)
-    def test_expired_outside_cooldown_updates_reset_timestamp(self, _):
-        """_session_reset_at is updated so the cooldown period starts."""
-        self.assertEqual(self.sdk._session_reset_at, 0.0)
-
-        before = time.monotonic()
-        with self._patch_parent_execute([EXPIRED_BILLQUERY, SUCCESS_BILLQUERY]):
-            self.sdk.Execute("some.service")
-        after = time.monotonic()
-
-        self.assertGreaterEqual(self.sdk._session_reset_at, before)
-        self.assertLessEqual(self.sdk._session_reset_at, after)
-
-    @patch("time.monotonic", return_value=1000.0)
-    def test_executebillquery_expired_outside_cooldown(self, _):
-        """[[...]] wrapped expiry also triggers the fire-and-forget reset."""
-        with self._patch_parent_execute(
-            [EXPIRED_EXECUTEBILLQUERY, SUCCESS_EXECUTEBILLQUERY]
-        ) as mock_exec:
-            result = self.sdk.Execute("some.service")
-
-        self.assertEqual(result, EXPIRED_EXECUTEBILLQUERY)
-        self.assertEqual(mock_exec.call_count, 2)
-
-    # -- session expired, within cooldown ------------------------------------
-
-    def test_expired_within_cooldown_makes_one_call(self):
-        """Within cooldown: no fire-and-forget call — preserves the activating SID."""
-        self.sdk._session_reset_at = time.monotonic()  # just reset
-
-        with self._patch_parent_execute([EXPIRED_BILLQUERY]) as mock_exec:
-            result = self.sdk.Execute("some.service")
-
-        self.assertEqual(result, EXPIRED_BILLQUERY)
         mock_exec.assert_called_once()
 
-    def test_expired_within_cooldown_preserves_cookiestore(self):
-        """Within cooldown: cookiesStore is NOT replaced (new SID must stay intact)."""
-        self.sdk._session_reset_at = time.monotonic()
+    def test_auth_failure_preserves_cookiestore(self):
+        """不再清除 SID —— 清掉只会让被有效会话掩盖的凭据问题立刻爆发。"""
         original_store = self.sdk.cookiesStore
 
         with self._patch_parent_execute([EXPIRED_BILLQUERY]):
             self.sdk.Execute("some.service")
 
         self.assertIs(self.sdk.cookiesStore, original_store)
+        self.assertEqual(self.sdk.cookiesStore.SID, "existing-session-id")
 
-    def test_expired_within_cooldown_does_not_update_reset_timestamp(self):
-        """Within cooldown: _session_reset_at is not updated."""
-        recent = time.monotonic()
-        self.sdk._session_reset_at = recent
-
+    def test_auth_failure_returns_envelope(self):
         with self._patch_parent_execute([EXPIRED_BILLQUERY]):
-            self.sdk.Execute("some.service")
+            result = self.sdk.Execute("some.service")
 
-        self.assertEqual(self.sdk._session_reset_at, recent)
+        payload = json.loads(result)
+        self.assertEqual(payload["error"], AUTH_ERROR_KEY)
+        self.assertIn("hint", payload)
+        self.assertIn("original", payload)
+
+    def test_envelope_hint_names_credential_fields(self):
+        """诊断提示必须点名实测会触发本错误的四个字段，并否掉重试/重启。"""
+        with self._patch_parent_execute([EXPIRED_BILLQUERY]):
+            hint = json.loads(self.sdk.Execute("some.service"))["hint"]
+
+        for field in ("KD_USERNAME", "KD_APP_ID", "KD_APP_SEC", "KD_LCID"):
+            self.assertIn(field, hint)
+        self.assertIn("重启", hint)
+
+    def test_envelope_preserves_original_response(self):
+        with self._patch_parent_execute([EXPIRED_BILLQUERY]):
+            payload = json.loads(self.sdk.Execute("some.service"))
+
+        self.assertEqual(payload["original"], json.loads(EXPIRED_BILLQUERY))
+
+    def test_executebillquery_shape_also_wrapped(self):
+        """[[...]] 包裹形态同样要识别。"""
+        with self._patch_parent_execute([EXPIRED_EXECUTEBILLQUERY]):
+            payload = json.loads(self.sdk.Execute("some.service"))
+
+        self.assertEqual(payload["error"], AUTH_ERROR_KEY)
+
+    def test_envelope_not_double_wrapped(self):
+        """已经是 envelope 的输入不得被再包一层。"""
+        envelope = _auth_error_envelope(EXPIRED_BILLQUERY)
+
+        with self._patch_parent_execute([envelope]):
+            payload = json.loads(self.sdk.Execute("some.service"))
+
+        self.assertEqual(payload["original"], json.loads(EXPIRED_BILLQUERY))
 
 
 # ---------------------------------------------------------------------------
@@ -304,10 +345,18 @@ class TestWrapQueryResult(unittest.TestCase):
     # -- passthrough for non-list / error responses --------------------------
 
     def test_session_expired_passthrough(self):
-        """会话过期响应原样透传，不包装。"""
+        """认证失败响应原样透传，不套分页 envelope。"""
         self.assertEqual(
             _wrap_query_result(EXPIRED_BILLQUERY, top_count=100, limit=2000, start_row=0),
             EXPIRED_BILLQUERY,
+        )
+
+    def test_auth_envelope_passthrough(self):
+        """生产路径上 Execute 已把错误包成 envelope，这里必须同样原样透传。"""
+        envelope = _auth_error_envelope(EXPIRED_BILLQUERY)
+        self.assertEqual(
+            _wrap_query_result(envelope, top_count=100, limit=2000, start_row=0),
+            envelope,
         )
 
     def test_executebillquery_expired_passthrough(self):
