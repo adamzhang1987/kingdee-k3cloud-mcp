@@ -55,3 +55,6 @@ htmlcov/
 # Claude Code 本地配置
 # ============================================================
 .claude/
+
+# Playwright MCP session dumps
+.playwright-mcp/
