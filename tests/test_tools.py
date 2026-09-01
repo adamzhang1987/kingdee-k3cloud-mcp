@@ -471,6 +471,7 @@ class TestSetup:
         monkeypatch.setenv("KD_APP_ID", "appid")
         monkeypatch.setenv("KD_APP_SEC", "secret")
         monkeypatch.delenv("KD_STARTUP_CHECK", raising=False)
+        monkeypatch.delenv("KD_STARTUP_CHECK_TIMEOUT", raising=False)
 
     def test_missing_env_vars_raises_runtime_error(self, monkeypatch):
         for key in ["KD_SERVER_URL", "KD_ACCT_ID", "KD_USERNAME", "KD_APP_ID", "KD_APP_SEC"]:
@@ -531,6 +532,71 @@ class TestSetup:
             caplog.set_level(logging.ERROR)
             setup()
         assert "凭据校验失败" in caplog.text
+
+    @staticmethod
+    def _timed_sdk(**kwargs):
+        """带真实数值超时属性的 mock SDK，并记录探针执行时看到的超时值。"""
+        mock_sdk = MagicMock()
+        mock_sdk.connectTimeout = 120
+        mock_sdk.requestTimeout = 120
+        seen = {}
+
+        def _probe(_params):
+            seen["connect"] = mock_sdk.connectTimeout
+            seen["request"] = mock_sdk.requestTimeout
+            if "side_effect" in kwargs:
+                raise kwargs["side_effect"]
+            return kwargs.get("return_value", SUCCESS_2D)
+
+        mock_sdk.ExecuteBillQuery.side_effect = _probe
+        return mock_sdk, seen
+
+    def test_startup_check_tightens_timeout_during_probe(self, monkeypatch):
+        """自检跑在 mcp.run() 之前，必须收紧超时，否则 K3Cloud 不可达会拖垮 MCP 握手。"""
+        self._set_env(monkeypatch)
+        mock_sdk, seen = self._timed_sdk()
+        with patch("kingdee_k3cloud_mcp.server.DiagnosticK3CloudApiSdk", return_value=mock_sdk):
+            setup()
+        assert seen["connect"] == 5.0
+        assert seen["request"] == 5.0
+
+    def test_startup_check_timeout_configurable(self, monkeypatch):
+        self._set_env(monkeypatch)
+        monkeypatch.setenv("KD_STARTUP_CHECK_TIMEOUT", "1.5")
+        mock_sdk, seen = self._timed_sdk()
+        with patch("kingdee_k3cloud_mcp.server.DiagnosticK3CloudApiSdk", return_value=mock_sdk):
+            setup()
+        assert seen["connect"] == 1.5
+        assert seen["request"] == 1.5
+
+    def test_startup_check_restores_timeout(self, monkeypatch):
+        """业务请求必须拿回 SDK 原本的宽松超时——不能继承自检的 5 秒。"""
+        self._set_env(monkeypatch)
+        mock_sdk, _ = self._timed_sdk()
+        with patch("kingdee_k3cloud_mcp.server.DiagnosticK3CloudApiSdk", return_value=mock_sdk):
+            setup()
+        assert mock_sdk.connectTimeout == 120
+        assert mock_sdk.requestTimeout == 120
+
+    def test_startup_check_restores_timeout_after_exception(self, monkeypatch):
+        """探针超时/抛异常是最可能发生的路径，还原逻辑必须走 finally。"""
+        self._set_env(monkeypatch)
+        mock_sdk, _ = self._timed_sdk(side_effect=RuntimeError("connect timeout"))
+        with patch("kingdee_k3cloud_mcp.server.DiagnosticK3CloudApiSdk", return_value=mock_sdk):
+            setup()  # 不抛异常
+        assert mock_sdk.connectTimeout == 120
+        assert mock_sdk.requestTimeout == 120
+
+    @pytest.mark.parametrize("bad", ["abc", "0", "-3"])
+    def test_startup_check_timeout_invalid_falls_back(self, monkeypatch, bad):
+        """环境变量拼错不能崩在启动路径上，也不能退回 SDK 的 120 秒。"""
+        self._set_env(monkeypatch)
+        monkeypatch.setenv("KD_STARTUP_CHECK_TIMEOUT", bad)
+        mock_sdk, seen = self._timed_sdk()
+        with patch("kingdee_k3cloud_mcp.server.DiagnosticK3CloudApiSdk", return_value=mock_sdk):
+            setup()
+        assert seen["connect"] == 5.0
+        assert seen["request"] == 5.0
 
     def test_readonly_mode_set_by_main(self, monkeypatch):
         monkeypatch.setenv("KD_SERVER_URL", "http://example.com")

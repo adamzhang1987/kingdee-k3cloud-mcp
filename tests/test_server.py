@@ -125,6 +125,51 @@ class TestCheckAuthFailure(unittest.TestCase):
         for raw in (BIZ_ERROR_FORM, BIZ_ERROR_FIELD, BIZ_ERROR_PARAM):
             self.assertFalse(_is_auth_failure(raw), raw)
 
+    def test_explicit_msgcode_beats_message_fallback(self):
+        """显式 MsgCode 说了算：业务错误即使消息里带该串也不能被改写成凭据建议。"""
+        for code in (4, 8, 9):
+            raw = json.dumps(
+                {
+                    "Result": {
+                        "ResponseStatus": {
+                            "IsSuccess": False,
+                            "MsgCode": code,
+                            "Errors": [{"Message": "会话信息已丢失，请重新登录"}],
+                        }
+                    }
+                }
+            )
+            self.assertFalse(_is_auth_failure(raw), raw)
+
+    def test_message_fallback_applies_when_msgcode_absent(self):
+        """MsgCode 缺失时消息串仍然兜底。"""
+        raw = json.dumps(
+            {
+                "Result": {
+                    "ResponseStatus": {
+                        "IsSuccess": False,
+                        "Errors": [{"Message": "会话信息已丢失，请重新登录"}],
+                    }
+                }
+            }
+        )
+        self.assertTrue(_is_auth_failure(raw))
+
+    def test_message_fallback_applies_when_msgcode_null(self):
+        """MsgCode 为 null 等同于缺失，兜底照常生效。"""
+        raw = json.dumps(
+            {
+                "Result": {
+                    "ResponseStatus": {
+                        "IsSuccess": False,
+                        "MsgCode": None,
+                        "Errors": [{"Message": "会话信息已丢失，请重新登录"}],
+                    }
+                }
+            }
+        )
+        self.assertTrue(_is_auth_failure(raw))
+
     def test_malformed_responses_do_not_crash(self):
         """旧实现对这些形态会抛 AttributeError；现在必须稳定返回 bool。"""
         for raw in MALFORMED_RESPONSES:

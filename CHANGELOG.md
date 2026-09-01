@@ -31,11 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   与金蝶端第三方登录授权是否一致，改正后再重启使 `.env` 生效），并说明重试无效、
   以及在改正配置之前重启只会让问题从偶发变成持续。
 - **检测判据改为 `MsgCode == 1`**，不再依赖单一中文子串。实测 14 次认证失败全部为 1，
-  而业务错误分别为 4 / 9 / 8，判据不会误伤。
+  而业务错误分别为 4 / 9 / 8，判据不会误伤。消息串仅在 `MsgCode` 缺失（或为 `null`）时兜底——
+  响应里有显式错误码时以错误码为准，业务错误即使消息中带上「会话信息已丢失」也不会被误判。
 
 ### Added
 - **启动时凭据自检**：`setup()` 后发一次最轻量的只读查询，凭据错误立即在启动日志中告警，
   不必等到第一次工具调用。**只告警、不阻断启动**，可用 `KD_STARTUP_CHECK=0` 关闭。
+  自检跑在 `mcp.run()` 之前，因此带独立的超时上界：`KD_STARTUP_CHECK_TIMEOUT`（默认 5 秒，
+  连接与读取各自计时），结束后无条件还原 SDK 原本的 120 秒超时——业务请求不受影响。
+  没有这个上界时，金蝶不可达会让启动阻塞到分钟级，进而拖垮 MCP 握手。
+- `KD_STARTUP_CHECK` / `KD_STARTUP_CHECK_TIMEOUT` 已补入 README 环境变量表与 `.env.example`。
 - `docs/session-auth-experiments.md`：三轮实证测试的完整流程、探针方法论与复现指南。
 
 ### Fixed

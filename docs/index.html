@@ -326,10 +326,10 @@
         <p class="lang-zh">可限制 AI 只能查询，从工具列表层面物理防止误操作。</p>
         <p class="lang-en">Restrict the AI to queries only — write tools are physically absent from the tool list.</p>
       </div>
-      <div class="card"><span class="icon">♻️</span>
-        <h3 class="lang-zh">自动会话恢复</h3><h3 class="lang-en">Automatic Session Recovery</h3>
-        <p class="lang-zh">长时间运行时自动处理会话超时，无需人工干预。</p>
-        <p class="lang-en">Handles session timeouts automatically during long-running operations.</p>
+      <div class="card"><span class="icon">🩺</span>
+        <h3 class="lang-zh">认证失败诊断</h3><h3 class="lang-en">Authentication Diagnostics</h3>
+        <p class="lang-zh">启动即校验凭据，认证失败返回可操作的修复指引，而不是误导文案。</p>
+        <p class="lang-en">Credentials are verified at startup; auth failures return actionable remediation, not a misleading message.</p>
       </div>
       <div class="card"><span class="icon">🌐</span>
         <h3 class="lang-zh">多传输协议</h3><h3 class="lang-en">Multiple Transports</h3>
@@ -542,8 +542,8 @@ kingdee-k3cloud-mcp
 
     <details class="faq-item" open>
       <summary><span class="lang-zh">会话超时怎么处理？</span><span class="lang-en">How are session timeouts handled?</span></summary>
-      <p class="lang-zh">Server 内置自动会话恢复机制，长时间运行时检测到超时会自动重新登录，无需人工干预。</p>
-      <p class="lang-en">The server automatically re-authenticates on timeout during long-running sessions — no manual action needed.</p>
+      <p class="lang-zh">不需要处理：实测确认会话过期对调用方是无感的，金蝶服务端会静默换发新会话，请求照常成功。需要注意的是金蝶那句「会话信息已丢失，请重新登录」<strong>并不是会话过期</strong>，而是认证失败——重试无效，Server 会把它替换为带修复步骤的诊断信息，指出该核对哪几项凭据配置。</p>
+      <p class="lang-en">Nothing to handle: session expiry is transparent — K3Cloud silently issues a new session and the request succeeds. Note that Kingdee's "session lost, please log in again" message is <strong>not</strong> a session expiry but an authentication failure, where retrying cannot help; the server replaces it with a diagnostic naming the exact credential settings to check.</p>
     </details>
     <details class="faq-item">
       <summary><span class="lang-zh">只读模式如何开启？</span><span class="lang-en">How do I enable read-only mode?</span></summary>

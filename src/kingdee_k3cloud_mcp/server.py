@@ -26,6 +26,10 @@ AUTH_FAIL_MSG_CODE = 1
 AUTH_FAIL_MSG = "会话信息已丢失"  # 仅在 MsgCode 缺失时兜底，不作主判据
 AUTH_ERROR_KEY = "authentication_failed"
 
+# 启动自检探针的超时上界（秒）。自检跑在 mcp.run() 之前，不能继承 SDK 默认的
+# 120s 连接 + 120s 读取，否则 K3Cloud 不可达时 MCP 握手会先超时。
+_STARTUP_CHECK_TIMEOUT = 5.0
+
 # Write-tool guard: set to True in main() when --mode readonly is active.
 # Write tools remain registered but return an error when this flag is set.
 _readonly = False
@@ -80,14 +84,20 @@ def _check_auth_failure(data) -> bool:
 
     主判据是 MsgCode == 1。实测 14 次认证失败全部为 1，而业务错误分别为
     4 / 9 / 8（表单不存在、字段不存在、参数为空），无一为 1，判据不会误伤。
-    消息串仅在 MsgCode 缺失时兜底。
+    消息串仅在 MsgCode 缺失（或为 null）时兜底——有显式错误码时它说了算，
+    否则业务错误会被误判成认证失败并套上误导性的凭据修复建议。
     """
     if isinstance(data, dict) and data.get("error") == AUTH_ERROR_KEY:
         return True  # 已经是本模块生成的 envelope
 
     for status in _response_statuses(data):
-        if status.get("MsgCode") == AUTH_FAIL_MSG_CODE:
+        msg_code = status.get("MsgCode")
+        if msg_code == AUTH_FAIL_MSG_CODE:
             return True
+        if msg_code is not None:
+            # 有显式错误码就以它为准。业务错误（4/9/8）即使消息里带上
+            # 「会话信息已丢失」，也不能被改写成凭据修复建议。
+            continue
         errors = status.get("Errors")
         if isinstance(errors, list):
             for err in errors:
@@ -924,6 +934,30 @@ def push_bill(
     return _sdk().Push(form_id, data)
 
 
+def _startup_check_timeout() -> float:
+    """自检探针的超时秒数。取值非法时回退默认，绝不因为环境变量拼错崩在启动路径上。"""
+    raw = os.getenv("KD_STARTUP_CHECK_TIMEOUT")
+    if not raw:
+        return _STARTUP_CHECK_TIMEOUT
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(
+            "[k3cloud] KD_STARTUP_CHECK_TIMEOUT=%r 不是数字，改用默认 %ss",
+            raw,
+            _STARTUP_CHECK_TIMEOUT,
+        )
+        return _STARTUP_CHECK_TIMEOUT
+    if value <= 0:
+        logger.warning(
+            "[k3cloud] KD_STARTUP_CHECK_TIMEOUT=%r 必须为正数，改用默认 %ss",
+            raw,
+            _STARTUP_CHECK_TIMEOUT,
+        )
+        return _STARTUP_CHECK_TIMEOUT
+    return value
+
+
 def _startup_credential_check() -> None:
     """启动时发一次最轻量的只读查询，尽早暴露凭据/授权配置错误。
 
@@ -932,10 +966,19 @@ def _startup_credential_check() -> None:
     业务错误与凭据无关。GetDataCenters() 不能用作探针：实测它是免鉴权接口，
     凭据错误时照样返回数据中心列表。
 
-    永远不抛异常，也永远不阻断启动（KD_STARTUP_CHECK=0 可关闭）。
+    永远不抛异常（KD_STARTUP_CHECK=0 可整体关闭）。本函数在 mcp.run() **之前**
+    同步执行，所以必须有超时上界：SDK 默认 120s 连接 + 120s 读取，K3Cloud 不可达
+    时足以让 MCP 握手超时、server 表现为「启动即死」。这里把超时临时收紧到
+    KD_STARTUP_CHECK_TIMEOUT（默认 5s，连接与读取各自计时，故最坏阻塞约 2 倍），
+    结束后无条件还原——业务请求必须保留 SDK 原本的宽松超时。
     """
+    sdk = _sdk()
+    timeout = _startup_check_timeout()
+    saved = (sdk.connectTimeout, sdk.requestTimeout)
+    sdk.connectTimeout = timeout
+    sdk.requestTimeout = timeout
     try:
-        raw = _sdk().ExecuteBillQuery(
+        raw = sdk.ExecuteBillQuery(
             {
                 "FormId": "BD_MATERIAL",
                 "FieldKeys": "FNumber",
@@ -949,6 +992,8 @@ def _startup_credential_check() -> None:
     except Exception as exc:  # noqa: BLE001 — 自检绝不能影响启动
         logger.warning("[k3cloud] 启动自检未能完成（不影响启动）：%s", exc)
         return
+    finally:
+        sdk.connectTimeout, sdk.requestTimeout = saved
 
     if isinstance(raw, str) and _is_auth_failure(raw):
         logger.error("[k3cloud] 启动自检：凭据校验失败。%s", _AUTH_ERROR_HINT)
