@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.4.0] - 2026-08-30
+## [1.4.0] - 2026-09-02
 
 ### Removed
 - **删除整套会话恢复机制**（`RetryableK3CloudApiSdk`）。三轮实证测试（约 230 次只读请求，
