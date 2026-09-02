@@ -39,3 +39,39 @@ jobs:
         run: |
           uv build
           uv run --with twine twine check dist/*
+
+  dependency-range:
+    name: deps ${{ matrix.resolution }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        resolution: [lowest-direct, highest]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      # 常规 test job 走 uv.lock，因此只验证锁定的那一个版本组合。
+      # 这里绕开 lockfile，按 pyproject 约束的上下界各解析一次——终端用户
+      # uvx / pip install 时拿到的正是这两端，而不是我们的 lockfile。
+      # 依赖约束被放宽到不兼容的大版本时（如 mcp <2 放宽到 <3 会解析到 2.x，
+      # 而 2.x 中 mcp.server.fastmcp 已被改名），这里会直接失败。
+      - name: Re-resolve at ${{ matrix.resolution }}
+        run: uv lock --upgrade --resolution ${{ matrix.resolution }}
+
+      - name: Show resolved direct dependencies
+        run: uv tree --depth 1
+
+      - name: Install
+        run: uv sync --all-extras --dev --frozen
+
+      - name: Import check
+        run: uv run --frozen python -c "import kingdee_k3cloud_mcp.server"
+
+      - name: Test
+        run: uv run --frozen pytest -q
