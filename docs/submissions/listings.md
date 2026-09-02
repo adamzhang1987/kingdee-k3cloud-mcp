@@ -15,7 +15,7 @@ kingdee-k3cloud-mcp
 ```
 金蝶云星空 K3Cloud MCP Server。让 Claude Desktop、Cursor、Cline、Cherry Studio 等任意支持 MCP 协议的 AI 客户端，通过自然语言直接查询和操作金蝶 ERP 系统。
 
-15 个 MCP 工具覆盖查询、大数据量导出、新增、提交、审核、反审核、下推等核心操作。通用接口设计——单一 form_id 参数支持销售订单、采购订单、库存、物料、客户、供应商等所有表单，无需逐单配置。内置自动翻页、流式落盘、日期分片三大高阶查询工具，彻底消除模型手动循环的负担。支持只读模式（防误操作）和自动会话恢复，适合生产环境长期运行。
+15 个 MCP 工具覆盖查询、大数据量导出、新增、提交、审核、反审核、下推等核心操作。通用接口设计——单一 form_id 参数支持销售订单、采购订单、库存、物料、客户、供应商等所有表单，无需逐单配置。内置自动翻页、流式落盘、日期分片三大高阶查询工具，彻底消除模型手动循环的负担。支持只读模式（防误操作），启动即校验凭据、认证失败给出可操作的修复指引，适合生产环境长期运行。
 ```
 
 ## 英文简介（约 200 字）
@@ -25,7 +25,7 @@ MCP Server for Kingdee K3Cloud (金蝶云星空) — one of China's most widely 
 
 Connect any MCP-compatible AI assistant (Claude Desktop, Cursor, Cline, Cherry Studio, Openclaw, etc.) to your Kingdee ERP via natural language. Query bills, submit orders, audit documents, push down workflows, and bulk-export data — all without touching the Kingdee web interface.
 
-15 MCP tools with a universal form_id design: one tool covers all form types (sales orders, purchase orders, inventory, materials, customers, suppliers). Advanced helpers — query_bill_all (auto-pagination), query_bill_to_file (streaming to disk), query_bill_range (date-range sharding) — eliminate the need for manual looping in AI sessions. Read-only mode prevents accidental writes. Auto session recovery handles Kingdee session timeouts transparently. Supports stdio, SSE, and streamable-http transports.
+15 MCP tools with a universal form_id design: one tool covers all form types (sales orders, purchase orders, inventory, materials, customers, suppliers). Advanced helpers — query_bill_all (auto-pagination), query_bill_to_file (streaming to disk), query_bill_range (date-range sharding) — eliminate the need for manual looping in AI sessions. Read-only mode prevents accidental writes. Credentials are checked at startup, and authentication failures return actionable remediation instead of Kingdee's misleading error text. Supports stdio, SSE, and streamable-http transports.
 
 Claude Code users can pair it with kingdee-k3cloud-skill for injected domain knowledge (field names, query patterns, workflows).
 ```
@@ -36,7 +36,7 @@ Claude Code users can pair it with kingdee-k3cloud-skill for injected domain kno
 • 15 MCP tools: query, bulk export, create, submit, audit, unaudit, push-down
 • Universal form_id interface — covers all Kingdee form types with a single tool
 • Auto-pagination & streaming export — query_bill_all / query_bill_to_file / query_bill_range
-• Read-only mode + auto session recovery for safe production use
+• Read-only mode + startup credential check + actionable auth diagnostics
 • Multi-transport: stdio (local), SSE, streamable-http (remote/shared)
 ```
 

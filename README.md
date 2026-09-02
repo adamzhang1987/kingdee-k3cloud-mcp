@@ -29,7 +29,7 @@ MCP Server for Kingdee K3Cloud ERP. Connect AI assistants to your ERP system via
 - **通用接口设计**：单一 `form_id` 参数支持物料、客户、销售订单、采购订单等所有表单，无需为每种业务单独配置
 - **高阶查询原语**：`query_bill_all`（自动翻页）、`query_bill_to_file`（流式落盘）、`query_bill_range`（日期分片），彻底消除模型手动循环的负担
 - **只读/读写模式**：可限制 AI 只能查询，防止误操作
-- **自动会话恢复**：长时间运行时自动处理会话超时，无需人工干预
+- **认证失败诊断**：启动即校验凭据，凭据/授权配置错误会返回可操作的修复指引，而不是金蝶那句误导的「会话信息已丢失」
 - **多传输协议**：支持 stdio（本地）、SSE、streamable-http（远程共享）
 - **标准 Python 包**：`pip install` 即可安装，仅需 Python 3.10+，无强制包管理器依赖
 - **类型安全的入参校验**：所有工具入参基于类型注解，由 FastMCP 在调用时自动做 Pydantic 运行时校验，参数结构错误会在到达金蝶 API 之前被拦截
@@ -108,6 +108,8 @@ cp .env.example .env
 | `KD_APP_SEC` | 应用密钥 | `your_app_secret` |
 | `KD_LCID` | 语言（默认 2052 中文） | `2052` |
 | `KD_ORG_NUM` | 组织编码（可选） | |
+| `KD_STARTUP_CHECK` | 启动时是否校验凭据（默认开启，`0` 关闭） | `1` |
+| `KD_STARTUP_CHECK_TIMEOUT` | 启动自检的超时秒数（默认 5） | `5` |
 
 > 第三方应用 ID 和密钥需在金蝶云星空管理端的「第三方系统登录授权」中申请。
 
@@ -359,7 +361,7 @@ kingdee-k3cloud-mcp（本项目）
 
 金蝶 ERP 的 MCP 集成方案不止一种，各有侧重。本项目更适合以下场景：
 
-- **需要长期稳定运行的生产环境 AI Agent**：`--mode readonly` 提供只读边界，`RetryableK3CloudApiSdk` 内置会话自动恢复（应对长时间运行的超时/断连），无需人工值守重启
+- **需要长期稳定运行的生产环境 AI Agent**：`--mode readonly` 提供只读边界；启动时自动校验凭据，配置错误在启动日志里就能看到，不必等到第一次工具调用；认证失败会返回明确的诊断而非误导文案，排障不靠猜
 - **数据量较大的查询/导出需求**：`query_bill_all`（自动翻页）、`query_bill_to_file`（流式落盘）、`query_bill_range`（日期分片）三个高阶原语专门处理万行级数据，避免让模型手写翻页循环
 - **有自定义字段 / 二次开发的金蝶部署**：`query_metadata` 工具可让 AI 在查询前自行发现表单的实际字段结构，不依赖预置字段表；配合 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 还可把企业专属的表单/字段/审批流封装成可复用的知识
 - **需要多种接入方式共存**：同一个 Server 支持 stdio（本地 IDE）、SSE、streamable-http（远程共享部署），也可作为 Openclaw 工具接入 IM 渠道

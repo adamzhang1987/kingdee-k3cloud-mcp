@@ -33,7 +33,7 @@ MCP Server for Kingdee K3Cloud (金蝶云星空) — one of the most widely used
 - Universal `form_id` parameter supports all Kingdee form types (sales orders, purchase orders, inventory, materials, customers, etc.)
 - Auto-pagination helpers (`query_bill_all`, `query_bill_range`) — no manual looping needed
 - Read-only mode to prevent accidental writes
-- Auto session recovery (handles Kingdee session timeouts transparently)
+- Startup credential check + actionable diagnostics on authentication failure
 - Supports stdio, SSE, and streamable-http transports
 
 **Stats:**  

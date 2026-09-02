@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import sys
-import time
 from collections.abc import Iterator
 from datetime import date, timedelta
 from pathlib import Path
@@ -11,24 +10,35 @@ from pathlib import Path
 from dotenv import load_dotenv
 from k3cloud_webapi_sdk.const.const_define import InvokeMethod
 from k3cloud_webapi_sdk.main import K3CloudApiSdk
-from k3cloud_webapi_sdk.model.cookie_store import CookieStore
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-SESSION_LOST_MSG = "会话信息已丢失"
+# K3Cloud 对**认证失败**返回「会话信息已丢失，请重新登录」(MsgCode=1)。
+# 这句文案严重误导：它讲的不是会话过期。实测（docs/session-auth-experiments.md）确认：
+#   - 有有效 SID 时服务端根本不校验凭据；
+#   - 无 SID 时才校验，失败即返回本错误；
+#   - 真正的会话过期是无感的——服务端静默换发新 SID，请求照常成功。
+# 因此重试或清除 SID 都不可能修复它。
+AUTH_FAIL_MSG_CODE = 1
+AUTH_FAIL_MSG = "会话信息已丢失"  # 仅在 MsgCode 缺失时兜底，不作主判据
+AUTH_ERROR_KEY = "authentication_failed"
+
+# 启动自检探针的超时上界（秒）。自检跑在 mcp.run() 之前，不能继承 SDK 默认的
+# 120s 连接 + 120s 读取，否则 K3Cloud 不可达时 MCP 握手会先超时。
+_STARTUP_CHECK_TIMEOUT = 5.0
 
 # Write-tool guard: set to True in main() when --mode readonly is active.
 # Write tools remain registered but return an error when this flag is set.
 _readonly = False
 
 # SDK instance: initialized in setup() after environment is validated.
-api_sdk: "RetryableK3CloudApiSdk | None" = None
+api_sdk: "DiagnosticK3CloudApiSdk | None" = None
 
 
-def _sdk() -> "RetryableK3CloudApiSdk":
+def _sdk() -> "DiagnosticK3CloudApiSdk":
     """Return the initialized SDK, asserting it is not None."""
     assert api_sdk is not None, "api_sdk not initialized — call setup() first"
     return api_sdk
@@ -52,71 +62,141 @@ class ApiKeyVerifier:
 mcp = FastMCP("kingdee-k3cloud")
 
 
-def _check_expired(data) -> bool:
+def _response_statuses(data) -> "Iterator[dict]":
+    """产出响应中所有 ResponseStatus 字典，兼容各种嵌套形态。
+
+    已知形态：BillQuery 返回裸对象，ExecuteBillQuery 包在 [[...]] 里，
+    ResponseStatus 可能挂在 Result 下，也可能在顶层。
+    """
     if isinstance(data, list):
-        return any(_check_expired(item) for item in data)
-    if isinstance(data, dict):
-        errors = (data.get("Result") or {}).get("ResponseStatus", {}).get("Errors", [])
-        return any(SESSION_LOST_MSG in (e.get("Message") or "") for e in errors)
+        for item in data:
+            yield from _response_statuses(item)
+    elif isinstance(data, dict):
+        status = data.get("ResponseStatus")
+        if isinstance(status, dict):
+            yield status
+        result = data.get("Result")
+        # Result 可能是 dict，也可能是 list（再套一层单据结果），两者都要下钻
+        if isinstance(result, (dict, list)):
+            yield from _response_statuses(result)
+
+
+def _as_msg_code(value) -> "int | None":
+    """把 MsgCode 归一成 int。
+
+    实测本部署返回的是数字 1，但不同版本/网关可能序列化成字符串 "1"。
+    若不归一，字符串形态会同时躲过 MsgCode 判据**和**消息串兜底
+    （因为兜底只在 MsgCode 缺失时才生效），认证失败就会被漏检。
+    布尔值不算错误码——`True == 1` 在 Python 中成立，必须排除。
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _check_auth_failure(data) -> bool:
+    """判断响应是否为「无有效会话且重新认证失败」。
+
+    主判据是 MsgCode == 1。实测 14 次认证失败全部为 1，而业务错误分别为
+    4 / 9 / 8（表单不存在、字段不存在、参数为空），无一为 1，判据不会误伤。
+    消息串仅在 MsgCode 缺失（或为 null）时兜底——有显式错误码时它说了算，
+    否则业务错误会被误判成认证失败并套上误导性的凭据修复建议。
+    """
+    if isinstance(data, dict) and data.get("error") == AUTH_ERROR_KEY:
+        return True  # 已经是本模块生成的 envelope
+
+    for status in _response_statuses(data):
+        msg_code = _as_msg_code(status.get("MsgCode"))
+        if msg_code == AUTH_FAIL_MSG_CODE:
+            return True
+        if msg_code is not None:
+            # 有显式错误码就以它为准。业务错误（4/9/8）即使消息里带上
+            # 「会话信息已丢失」，也不能被改写成凭据修复建议。
+            continue
+        errors = status.get("Errors")
+        if isinstance(errors, list):
+            for err in errors:
+                if isinstance(err, dict) and AUTH_FAIL_MSG in (err.get("Message") or ""):
+                    return True
     return False
 
 
-def _is_session_expired(result: str) -> bool:
+def _is_auth_envelope(result: str) -> bool:
+    """判断字符串是否已经是本模块生成的 envelope（用于避免重复包装）。"""
     try:
-        return _check_expired(json.loads(result))
+        data = json.loads(result)
     except (json.JSONDecodeError, TypeError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get("error") == AUTH_ERROR_KEY
+
+
+def _is_auth_failure(result: str) -> bool:
+    try:
+        return _check_auth_failure(json.loads(result))
+    except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
         return False
 
 
-class RetryableK3CloudApiSdk(K3CloudApiSdk):
-    """K3CloudApiSdk with automatic session recovery on expiry.
+_AUTH_ERROR_HINT = (
+    "这是认证失败，不是会话过期，重试无效——凭据错就是错。"
+    "请核对 KD_USERNAME / KD_APP_ID / KD_APP_SEC / KD_LCID 是否与金蝶端"
+    "「第三方系统登录授权」逐字一致，以及该授权是否处于启用状态。"
+    "改好后的生效方式取决于改了哪一边："
+    "① 改的是金蝶端（重新启用授权、把用户加回登录列表）——**无需重启**，"
+    "下一次调用会用当前凭据重新认证并自动恢复；"
+    "② 改的是 .env 的值——**必须重启** MCP Server，.env 只在启动时读取一次，"
+    "进程内存中的凭据不会自行更新。"
+    "在改正配置之前重启没有意义，只会让问题从偶发变成持续："
+    "凭据错误本可被一个仍有效的会话掩盖，而新进程必须走凭据校验。"
+    "另：KD_ACCT_ID 配置错误不会走到这里，它表现为 HTTP 非 200。"
+)
 
-    When K3Cloud returns "会话信息已丢失", the recovery flow is:
-      1. If the last session reset was more than _RESET_COOLDOWN seconds ago:
-         clear cookiesStore so BuildHeader() sends no session headers on retry.
-         The retry call lets the server issue a fresh SID (stored by
-         FillCookieAndHeader), even though the response body still reports
-         "session lost" while the new session activates server-side.
-      2. If we reset recently (within cooldown), skip clearing — the freshly
-         issued SID is preserved and retried directly.
 
-    Rapid consecutive resets would destroy each newly-issued SID before it
-    activates, so the 300-second cooldown keeps the latest SID intact until
-    the server accepts it.
+def _auth_error_envelope(raw: str) -> str:
+    """把认证失败响应包装成带可操作诊断的 envelope。"""
+    try:
+        original = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        original = raw
+    return json.dumps(
+        {
+            "error": AUTH_ERROR_KEY,
+            "message": "金蝶返回「会话信息已丢失，请重新登录」，但这是认证失败，不是会话过期。",
+            "hint": _AUTH_ERROR_HINT,
+            "original": original,
+        },
+        ensure_ascii=False,
+    )
+
+
+class DiagnosticK3CloudApiSdk(K3CloudApiSdk):
+    """把认证失败标注成可操作的诊断信息；**从不重试**。
+
+    早期版本在这里实现了一套会话恢复状态机（清 SID + 重发 + 300 秒冷却）。
+    三轮实证测试（docs/session-auth-experiments.md）证明它针对的是一个不存在的
+    故障模式：SID 陈旧或为空时请求本就会成功，而凭据错误时重试也不可能成功。
+    该机制已整体删除。
+
+    这里拦截的位置是 WebApiClient.Execute —— 全部 tool 的唯一公共出口。
     """
-
-    _RESET_COOLDOWN = 300  # seconds — new SID takes several minutes to activate server-side
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._session_reset_at = 0.0
 
     def Execute(self, service_name, json_data=None, invoke_type=InvokeMethod.SYNC):
         result = super().Execute(service_name, json_data, invoke_type)
-        if isinstance(result, str) and _is_session_expired(result):
-            now = time.monotonic()
-            if now - self._session_reset_at >= self._RESET_COOLDOWN:
-                # Reset: clear stale SID, make one fire-and-forget call so the server
-                # issues a fresh SID (stored by FillCookieAndHeader). The response body
-                # will still say "session lost" — discard it. Do NOT retry the original
-                # request; return the error and let the SID activate over the next few
-                # minutes. Subsequent calls will use the newly-stored SID.
-                logger.warning("[k3cloud] session expired, re-establishing SID...")
-                self._session_reset_at = now
-                if hasattr(self, "cookiesStore"):
-                    self.cookiesStore = CookieStore()
-                else:
-                    logger.warning(
-                        "[k3cloud] SDK internals changed: cookiesStore not found, cannot reset SID"
-                    )
-                super().Execute(
-                    service_name, json_data, invoke_type
-                )  # establishes SID, result discarded
-            else:
-                # Within cooldown: a fresh SID was recently obtained. Do NOT retry —
-                # retrying would cause the server to issue yet another new SID,
-                # restarting the activation clock. Just return the error and wait.
-                logger.warning("[k3cloud] session recovering, SID not yet active — skipping retry")
+        if isinstance(result, str) and _is_auth_failure(result) and not _is_auth_envelope(result):
+            # 完整诊断在 envelope 的 hint 里返回给调用方，日志只留一行定位信息
+            logger.error(
+                "[k3cloud] 认证失败 (MsgCode=%s) on %s — 详见返回结果的 hint 字段",
+                AUTH_FAIL_MSG_CODE,
+                service_name.rsplit(".", 1)[-1],
+            )
+            return _auth_error_envelope(result)
         return result
 
 
@@ -142,7 +222,7 @@ def _wrap_query_result(raw: str, top_count: int, limit: int, start_row: int) -> 
           "hint": "..."          # 仅 truncated=true 时存在
         }
     """
-    if _is_session_expired(raw):
+    if _is_auth_failure(raw):
         return raw
 
     try:
@@ -198,7 +278,7 @@ def _paginate_bill(
         }
         raw = _sdk().BillQuery(page_params)
 
-        if _is_session_expired(raw):
+        if _is_auth_failure(raw):
             return rows, False, current_start, raw
 
         try:
@@ -280,7 +360,7 @@ def _stream_to_file_handle(
         }
         raw = _sdk().BillQuery(page_params)
 
-        if _is_session_expired(raw):
+        if _is_auth_failure(raw):
             return rows_written, header_written, raw
 
         try:
@@ -417,7 +497,7 @@ def count_bill(form_id: str, filter_string: str = "") -> str:
         }
     )
 
-    if _is_session_expired(raw):
+    if _is_auth_failure(raw):
         return raw
 
     try:
@@ -876,6 +956,73 @@ def push_bill(
     return _sdk().Push(form_id, data)
 
 
+def _startup_check_timeout() -> float:
+    """自检探针的超时秒数。取值非法时回退默认，绝不因为环境变量拼错崩在启动路径上。"""
+    raw = os.getenv("KD_STARTUP_CHECK_TIMEOUT")
+    if not raw:
+        return _STARTUP_CHECK_TIMEOUT
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(
+            "[k3cloud] KD_STARTUP_CHECK_TIMEOUT=%r 不是数字，改用默认 %ss",
+            raw,
+            _STARTUP_CHECK_TIMEOUT,
+        )
+        return _STARTUP_CHECK_TIMEOUT
+    if value <= 0:
+        logger.warning(
+            "[k3cloud] KD_STARTUP_CHECK_TIMEOUT=%r 必须为正数，改用默认 %ss",
+            raw,
+            _STARTUP_CHECK_TIMEOUT,
+        )
+        return _STARTUP_CHECK_TIMEOUT
+    return value
+
+
+def _startup_credential_check() -> None:
+    """启动时发一次最轻量的只读查询，尽早暴露凭据/授权配置错误。
+
+    只回答「凭据是否被拒绝」这一个问题：仅在**明确检测到认证失败**时告警，
+    成功或任何其它错误都视为「未发现凭据问题」——因为表单不存在、无权限等
+    业务错误与凭据无关。GetDataCenters() 不能用作探针：实测它是免鉴权接口，
+    凭据错误时照样返回数据中心列表。
+
+    永远不抛异常（KD_STARTUP_CHECK=0 可整体关闭）。本函数在 mcp.run() **之前**
+    同步执行，所以必须有超时上界：SDK 默认 120s 连接 + 120s 读取，K3Cloud 不可达
+    时足以让 MCP 握手超时、server 表现为「启动即死」。这里把超时临时收紧到
+    KD_STARTUP_CHECK_TIMEOUT（默认 5s，连接与读取各自计时，故最坏阻塞约 2 倍），
+    结束后无条件还原——业务请求必须保留 SDK 原本的宽松超时。
+    """
+    sdk = _sdk()
+    timeout = _startup_check_timeout()
+    saved = (sdk.connectTimeout, sdk.requestTimeout)
+    sdk.connectTimeout = timeout
+    sdk.requestTimeout = timeout
+    try:
+        raw = sdk.ExecuteBillQuery(
+            {
+                "FormId": "BD_MATERIAL",
+                "FieldKeys": "FNumber",
+                "FilterString": "",
+                "OrderString": "",
+                "TopRowCount": 1,
+                "StartRow": 0,
+                "Limit": 1,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001 — 自检绝不能影响启动
+        logger.warning("[k3cloud] 启动自检未能完成（不影响启动）：%s", exc)
+        return
+    finally:
+        sdk.connectTimeout, sdk.requestTimeout = saved
+
+    if isinstance(raw, str) and _is_auth_failure(raw):
+        logger.error("[k3cloud] 启动自检：凭据校验失败。%s", _AUTH_ERROR_HINT)
+    else:
+        logger.info("[k3cloud] 启动自检通过")
+
+
 def setup() -> None:
     """Initialize environment, validate required vars, and create the SDK instance."""
     global api_sdk
@@ -892,7 +1039,7 @@ def setup() -> None:
         mcp.settings.auth = AuthSettings(issuer_url=issuer_url, resource_server_url=issuer_url)  # type: ignore[arg-type]
 
     server_url = os.getenv("KD_SERVER_URL", "")
-    api_sdk = RetryableK3CloudApiSdk(server_url)
+    api_sdk = DiagnosticK3CloudApiSdk(server_url)
     api_sdk.InitConfig(
         acct_id=os.getenv("KD_ACCT_ID", ""),
         user_name=os.getenv("KD_USERNAME", ""),
@@ -902,6 +1049,9 @@ def setup() -> None:
         lcid=int(os.getenv("KD_LCID", "2052")),
         org_num=int(os.getenv("KD_ORG_NUM", "0") or "0"),
     )
+
+    if os.getenv("KD_STARTUP_CHECK", "1").lower() not in ("0", "false", "no"):
+        _startup_credential_check()
 
 
 def main():
