@@ -1,6 +1,8 @@
-# Kingdee K3Cloud MCP
+# Kingdee MCP Server — K3Cloud (金蝶MCP)
 
 [English](README.en.md) | [中文](README.md)
+
+[Official Website](https://adamzhang1987.github.io/kingdee-k3cloud-mcp/) | [GitHub](https://github.com/adamzhang1987/kingdee-k3cloud-mcp) | [PyPI](https://pypi.org/project/kingdee-k3cloud-mcp/)
 
 [![PyPI version](https://img.shields.io/pypi/v/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
 [![Downloads](https://img.shields.io/pypi/dm/kingdee-k3cloud-mcp)](https://pypi.org/project/kingdee-k3cloud-mcp/)
@@ -8,7 +10,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml)
 
-MCP Server for Kingdee K3Cloud ERP. Lets AI assistants (Claude Desktop, Claude Code, Cursor, Windsurf, Cline, Continue, Cherry Studio, and any MCP-compatible client) query and operate your Kingdee ERP system through natural language. A standard PyPI package — `pip install` or `uvx` both work out of the box, with no dependency on a specific package manager.
+Kingdee MCP Server (金蝶MCP) for Kingdee K3Cloud / 金蝶云星空 ERP. It lets AI assistants (Claude Desktop, Claude Code, Cursor, Windsurf, Cline, Continue, Cherry Studio, and any MCP-compatible client) query and operate your Kingdee ERP system through natural language. A standard PyPI package — `pip install` or `uvx` both work out of the box, with no dependency on a specific package manager.
 
 > **Tip**: Connect through an MCP-capable agent platform like [Openclaw](https://docs.openclaw.ai/) to query stock levels or bills via natural language directly from the IM channels it supports (e.g. WeChat, Telegram) — no need to open the K3Cloud web UI. Agents that support the Skill mechanism (Claude Code, Openclaw, etc.) can additionally pair this with [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) for a better experience — the Skill injects K3Cloud form field knowledge, common query patterns, and workflow guidance, significantly reducing trial and error — but it's **not required**: the MCP server works standalone with the full tool set on any MCP client.
 
