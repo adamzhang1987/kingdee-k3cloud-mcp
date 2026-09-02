@@ -8,12 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- 优化“金蝶MCP”搜索可见性：统一 Pages、README 与 PyPI 元数据中的产品名称（全站采用
-  连写形式「金蝶MCP」，与中文查询词一致），并为官网补充 canonical、hreflang、
-  `keywords`、社交分享标签、`SoftwareApplication` 与 `FAQPage` 结构化数据和 sitemap.xml。
+- 优化“金蝶MCP”搜索可见性：统一 Pages、README、PyPI 元数据与目录提交文案中的产品名称
+  （全站采用连写形式「金蝶MCP」，与中文查询词一致），并为官网补充 canonical、hreflang、
+  `keywords`、社交分享标签、`SoftwareApplication` 与 `FAQPage` 结构化数据和 sitemap.xml；
+  同时补齐 GitHub 仓库的 homepage、description 与 topics。
 - 官网 FAQ 新增「金蝶MCP 是什么？和金蝶官方的 MCP 有什么关系？」，说明本项目是面向
   金蝶云星空（K3Cloud）的第三方开源实现，与金蝶官方苍穹 MCP 无隶属关系。
-- GitHub 仓库补齐 `homepage`（此前为空，官网拿不到 About 侧栏内链）、description 与 topics。
 
 ## [1.4.0] - 2026-09-02
 
