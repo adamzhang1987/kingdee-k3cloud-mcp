@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/adamzhang1987/kingdee-k3cloud-mcp/actions/workflows/ci.yml)
 
-金蝶MCP Server（Kingdee K3Cloud MCP）面向金蝶云星空 ERP，让 AI 助手（Claude Desktop、Claude Code、Cursor、Windsurf、Cline、Continue、Cherry Studio 等任意支持 MCP 协议的客户端）通过自然语言查询和操作金蝶系统。标准 PyPI 包，`pip install` 或 `uvx` 均可直接运行，无需绑定特定包管理器。
+金蝶MCP Server（Kingdee K3Cloud MCP）面向金蝶云星空 ERP，让 AI 助手（Claude Desktop、Claude Code、Cursor、Windsurf、Cline、Continue、Cherry Studio 等任意支持 MCP 协议的客户端）通过自然语言查询和操作金蝶 ERP 系统。标准 PyPI 包，`pip install` 或 `uvx` 均可直接运行，无需绑定特定包管理器。
 
 > **提示**：通过 [Openclaw](https://docs.openclaw.ai/) 等支持 MCP 的 Agent 平台接入后，可在其支持的 IM 渠道（如微信、Telegram）中用自然语言查库存、查单据，无需打开金蝶网页端。支持 Skill 机制的 AI Agent（Claude Code、Openclaw 等）还可配合 [kingdee-k3cloud-skill](https://github.com/adamzhang1987/kingdee-k3cloud-skill) 获得更佳体验——Skill 为 Agent 注入金蝶表单字段、常用查询模式和工作流知识，大幅减少试错次数，但**并非必需**，MCP Server 本身即可独立配合任意 MCP 客户端使用全部工具。
 
