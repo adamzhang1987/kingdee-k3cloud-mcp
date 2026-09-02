@@ -3,8 +3,146 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kingdee K3Cloud MCP — 让 AI 助手直连金蝶云星空</title>
-<meta name="description" content="金蝶云星空 K3Cloud MCP Server，让 Claude Desktop、Claude Code、Cursor、Cline 等任意支持 MCP 协议的客户端通过自然语言查询和操作金蝶 ERP 系统。">
+<title>金蝶MCP Server｜金蝶云星空 K3Cloud MCP — 让 AI 助手直连 ERP</title>
+<meta name="description" content="金蝶MCP Server（Kingdee K3Cloud MCP）——开源的金蝶云星空 MCP Server，让 Claude Desktop、Claude Code、Cursor、Cline 等 AI 助手用自然语言查询和操作金蝶 ERP。">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://adamzhang1987.github.io/kingdee-k3cloud-mcp/">
+<meta name="keywords" content="金蝶MCP,金蝶MCP Server,金蝶云星空MCP,Kingdee MCP,K3Cloud MCP,金蝶ERP AI,金蝶API,Claude金蝶,金蝶AI助手,MCP Server">
+<link rel="alternate" hreflang="zh-CN" href="https://adamzhang1987.github.io/kingdee-k3cloud-mcp/">
+<link rel="alternate" hreflang="x-default" href="https://adamzhang1987.github.io/kingdee-k3cloud-mcp/">
+
+<meta property="og:type" content="website">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:url" content="https://adamzhang1987.github.io/kingdee-k3cloud-mcp/">
+<meta property="og:site_name" content="金蝶MCP Server">
+<meta property="og:title" content="金蝶MCP Server｜金蝶云星空 K3Cloud MCP — 让 AI 助手直连 ERP">
+<meta property="og:description" content="开源的金蝶MCP Server（金蝶云星空 K3Cloud MCP），让 AI 助手通过自然语言安全查询和操作金蝶 ERP。">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="金蝶MCP Server｜金蝶云星空 K3Cloud MCP — 让 AI 助手直连 ERP">
+<meta name="twitter:description" content="开源的金蝶MCP Server（金蝶云星空 K3Cloud MCP），让 AI 助手通过自然语言安全查询和操作金蝶 ERP。">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "金蝶MCP Server (kingdee-k3cloud-mcp)",
+  "alternateName": ["金蝶MCP", "Kingdee MCP", "K3Cloud MCP", "金蝶云星空 MCP Server"],
+  "softwareVersion": "1.4.0",
+  "codeRepository": "https://github.com/adamzhang1987/kingdee-k3cloud-mcp",
+  "description": "开源的金蝶MCP Server（金蝶云星空 K3Cloud MCP），让 AI 助手通过自然语言安全查询和操作金蝶 ERP。",
+  "url": "https://adamzhang1987.github.io/kingdee-k3cloud-mcp/",
+  "sameAs": "https://github.com/adamzhang1987/kingdee-k3cloud-mcp",
+  "downloadUrl": "https://pypi.org/project/kingdee-k3cloud-mcp/",
+  "installUrl": "https://pypi.org/project/kingdee-k3cloud-mcp/",
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "applicationCategory": "BusinessApplication",
+  "applicationSubCategory": "ERP Integration",
+  "operatingSystem": "Windows, macOS, Linux",
+  "softwareRequirements": "Python 3.10 or later",
+  "isAccessibleForFree": true,
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "CNY"
+  },
+  "author": {
+    "@type": "Person",
+    "name": "Adam Zhang",
+    "url": "https://github.com/adamzhang1987"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "inLanguage": "zh-CN",
+  "url": "https://adamzhang1987.github.io/kingdee-k3cloud-mcp/",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "金蝶MCP 是什么？和金蝶官方的 MCP 有什么关系？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "「金蝶MCP」通常指两件不同的事。一是金蝶官方：金蝶宣布云·苍穹平台支持 MCP 协议，属于官方商业产品线。二是本项目：面向金蝶云星空（K3Cloud）的第三方开源 MCP Server，基于官方 kingdee-cdp-webapi-sdk 调用 K3Cloud Web API，用 Apache-2.0 协议发布在 PyPI 上，可自行部署、连接你自己的星空账套，与金蝶官方无隶属关系。如果你用的是云星空且想让 Claude、Cursor 这类 AI 客户端直接读写单据，本项目就是为这个场景做的。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "会话超时怎么处理？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "不需要处理：实测确认会话过期对调用方是无感的，金蝶服务端会静默换发新会话，请求照常成功。需要注意的是金蝶那句「会话信息已丢失，请重新登录」并不是会话过期，而是认证失败——重试无效，Server 会把它替换为带修复步骤的诊断信息，指出该核对哪几项凭据配置。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "只读模式如何开启？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "通过 --mode readonly 参数或 MCP_MODE=readonly 环境变量，服务器只暴露 8 个查询工具。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "必须用 uv 吗？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "不需要。这是一个标准 PyPI 包，pip install kingdee-k3cloud-mcp 即可安装运行，仅需 Python 3.10+。uvx 只是一种免安装的可选便捷方式，不是必须依赖。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "必须安装配套 Skill 吗？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "不需要。MCP Server 独立运行即可使用全部 15 个工具，且内置 query_metadata 让 AI 自行发现表单字段。Skill 是可选增强，能进一步减少字段试错、封装企业自定义字段和工作流知识，配合支持 Skill 机制的 Agent（如 Claude Code、Openclaw）效果更佳。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "数据权限怎么设置？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "权限不在 MCP 配置中设置，由 KD_USERNAME 对应的集成用户在金蝶云星空侧的角色决定。注意数据规则过滤是静默的——结果行数变少而非报错，可用同一账号登录星空 Web 端对比行数确认，详见 README「数据权限」一节。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "可以多人共用一个 Server 实例吗？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "可以，使用 SSE 或 streamable-http 传输部署为远程共享服务，并可通过 MCP_API_KEY 启用鉴权。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "如何扩展支持更多单据类型？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "所有工具通过通用的 form_id 参数工作，无需为新单据类型单独开发工具，直接传入对应 form_id 即可。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "数据量很大时怎么导出？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "使用 query_bill_to_file 自动翻页并流式写入本地文件（ndjson / csv），适合万行以上导出。"
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "和 kingdee-k3cloud-skill 是什么关系？",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Skill 负责\"什么时候用、怎么用\"的知识注入（表单速查、字段验证、工作流），MCP Server 负责实际的工具执行。支持 Skill 机制的 AI Agent（Claude Code、openclaw、hermes 等）配合使用效果更佳。"
+      }
+    }
+  ]
+}
+</script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐉</text></svg>">
 <style>
   :root{
@@ -222,7 +360,7 @@
   <div class="wrap">
     <a class="brand" href="#top">
       <span class="dot"></span>
-      Kingdee K3Cloud <span class="lang-zh">MCP</span><span class="lang-en">MCP</span>
+      <span class="lang-zh">金蝶MCP</span><span class="lang-en">Kingdee MCP</span>
     </a>
     <div class="navlinks">
       <a href="#features"><span class="lang-zh">功能特性</span><span class="lang-en">Features</span></a>
@@ -242,10 +380,10 @@
   <div class="wrap">
     <div class="kicker">⚡ <span class="lang-zh">Model Context Protocol Server</span><span class="lang-en">Model Context Protocol Server</span></div>
     <h1>
-      <span class="lang-zh">让 AI 助手直连金蝶云星空</span>
-      <span class="lang-en">Connect AI Assistants to Kingdee K3Cloud ERP</span>
+      <span class="lang-zh">金蝶MCP Server — 让 AI 助手直连金蝶云星空</span>
+      <span class="lang-en">Kingdee MCP Server — K3Cloud ERP for AI Assistants</span>
     </h1>
-    <p class="subtitle lang-zh">通过 MCP 协议，让 Claude Desktop、Claude Code、Cursor、Windsurf、Cline、Openclaw 等任意支持 MCP 的客户端用自然语言查询和操作金蝶云星空 ERP 系统——甚至可以在微信、Telegram 里问一句就查库存。</p>
+    <p class="subtitle lang-zh">金蝶MCP（Kingdee K3Cloud MCP Server）是面向金蝶云星空的开源 MCP Server，让 Claude Desktop、Claude Code、Cursor、Windsurf、Cline、Openclaw 等任意支持 MCP 的 AI 助手用自然语言查询和操作金蝶 ERP——甚至可以在微信、Telegram 里问一句就查库存。</p>
     <p class="subtitle lang-en">Query and operate your Kingdee K3Cloud ERP in natural language — from Claude Desktop, Claude Code, Cursor, Windsurf, Cline, Openclaw, or any MCP-compatible client. Even from WeChat or Telegram, one message away.</p>
 
     <div class="cta-row">
@@ -541,6 +679,11 @@ kingdee-k3cloud-mcp
     <h2 class="lang-en">Frequently Asked Questions</h2>
 
     <details class="faq-item" open>
+      <summary><span class="lang-zh">金蝶MCP 是什么？和金蝶官方的 MCP 有什么关系？</span><span class="lang-en">What is Kingdee MCP, and how does it relate to Kingdee's official MCP?</span></summary>
+      <p class="lang-zh">「金蝶MCP」通常指两件不同的事。一是<strong>金蝶官方</strong>：金蝶宣布云·苍穹平台支持 MCP 协议，属于官方商业产品线。二是<strong>本项目</strong>：面向<strong>金蝶云星空（K3Cloud）</strong>的第三方开源 MCP Server，基于官方 <code>kingdee-cdp-webapi-sdk</code> 调用 K3Cloud Web API，用 Apache-2.0 协议发布在 PyPI 上，可自行部署、连接你自己的星空账套，与金蝶官方无隶属关系。如果你用的是云星空且想让 Claude、Cursor 这类 AI 客户端直接读写单据，本项目就是为这个场景做的。</p>
+      <p class="lang-en">"Kingdee MCP" can mean two different things. One is <strong>Kingdee's own offering</strong> — Kingdee announced MCP protocol support for its Cangqiong (苍穹) platform, a commercial product line. The other is <strong>this project</strong>: a third-party, open-source MCP Server for <strong>Kingdee K3Cloud (金蝶云星空)</strong>, built on the official <code>kingdee-cdp-webapi-sdk</code> against the K3Cloud Web API, published on PyPI under Apache-2.0. It is self-hosted, connects to your own K3Cloud account set, and is not affiliated with Kingdee. If you run K3Cloud and want Claude, Cursor, or similar AI clients to read and write bills directly, this is the project for that.</p>
+    </details>
+    <details class="faq-item" open>
       <summary><span class="lang-zh">会话超时怎么处理？</span><span class="lang-en">How are session timeouts handled?</span></summary>
       <p class="lang-zh">不需要处理：实测确认会话过期对调用方是无感的，金蝶服务端会静默换发新会话，请求照常成功。需要注意的是金蝶那句「会话信息已丢失，请重新登录」<strong>并不是会话过期</strong>，而是认证失败——重试无效，Server 会把它替换为带修复步骤的诊断信息，指出该核对哪几项凭据配置。</p>
       <p class="lang-en">Nothing to handle: session expiry is transparent — K3Cloud silently issues a new session and the request succeeds. Note that Kingdee's "session lost, please log in again" message is <strong>not</strong> a session expiry but an authentication failure, where retrying cannot help; the server replaces it with a diagnostic naming the exact credential settings to check.</p>
@@ -593,6 +736,8 @@ kingdee-k3cloud-mcp
     <div>
       <div class="brand" style="margin-bottom:10px;"><span class="dot"></span> Kingdee K3Cloud MCP</div>
       <p class="lang-zh" style="max-width:320px;">开源 MCP Server，Apache License 2.0。</p>
+      <p class="lang-zh" style="max-width:340px;font-size:12.5px;color:var(--text-2);margin-top:8px;">金蝶MCP · 金蝶MCP Server · 金蝶云星空 MCP Server · Kingdee MCP · K3Cloud MCP Server</p>
+      <p class="lang-en" style="max-width:340px;font-size:12.5px;color:var(--text-2);margin-top:8px;">Kingdee MCP · Kingdee MCP Server · K3Cloud MCP Server · 金蝶MCP · 金蝶云星空 MCP Server</p>
       <p class="lang-en" style="max-width:320px;">Open-source MCP Server, licensed under Apache 2.0.</p>
     </div>
     <div class="footlinks">

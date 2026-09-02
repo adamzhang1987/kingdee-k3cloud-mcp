@@ -4,13 +4,13 @@
 
 ## 条目内容（粘贴到 README.md 对应分类）
 
-在 **ERP** 或 **Business Tools** 分类下（若无该分类可建议新增），插入以下一行：
+在 **Workplace & Productivity** 分类下插入以下一行：
 
 ```markdown
-- [kingdee-k3cloud-mcp](https://github.com/adamzhang1987/kingdee-k3cloud-mcp) - MCP Server for Kingdee K3Cloud ERP (金蝶云星空). Connect AI assistants to your ERP system for querying bills, submitting orders, managing inventory, and more via natural language. `Python` `MIT`
+- [adamzhang1987/kingdee-k3cloud-mcp](https://github.com/adamzhang1987/kingdee-k3cloud-mcp) [![kingdee-k3cloud-mcp MCP server](https://glama.ai/mcp/servers/adamzhang1987/kingdee-k3cloud-mcp/badges/score.svg)](https://glama.ai/mcp/servers/adamzhang1987/kingdee-k3cloud-mcp) 🐍 🏠 🍎 🪟 🐧 - Kingdee K3Cloud MCP Server (金蝶 MCP) with 15 tools for querying and operating Kingdee ERP through natural language. Read-only mode, bulk export, stdio/SSE/Streamable HTTP. [Website](https://adamzhang1987.github.io/kingdee-k3cloud-mcp/). Install: `uvx kingdee-k3cloud-mcp`.
 ```
 
-> 注：按 awesome-mcp-servers 规范，license badge 需与实际对齐（本项目为 Apache-2.0），请在提交时核对目录的 license 标注格式。
+> 注：本项目采用 Apache-2.0；提交时以目标仓库当前条目格式为准。
 
 ## PR 标题
 
@@ -23,10 +23,10 @@ Add kingdee-k3cloud-mcp: MCP Server for Kingdee K3Cloud ERP
 ```markdown
 ## Description
 
-Adding [kingdee-k3cloud-mcp](https://github.com/adamzhang1987/kingdee-k3cloud-mcp) to the ERP / Business Tools section.
+Adding [kingdee-k3cloud-mcp](https://github.com/adamzhang1987/kingdee-k3cloud-mcp) to the Workplace & Productivity section. Website: https://adamzhang1987.github.io/kingdee-k3cloud-mcp/
 
 **What it does:**  
-MCP Server for Kingdee K3Cloud (金蝶云星空) — one of the most widely used ERP systems in China. Connects AI assistants (Claude Desktop, Cursor, Cline, Cherry Studio, etc.) to Kingdee ERP via natural language.
+Kingdee K3Cloud MCP Server (金蝶 MCP) for 金蝶云星空 — one of the most widely used ERP systems in China. Connects AI assistants (Claude Desktop, Cursor, Cline, Cherry Studio, etc.) to Kingdee ERP via natural language.
 
 **Key features:**
 - 15 MCP tools covering query, bulk export, create, submit, audit, unaudit, push-down
@@ -52,6 +52,6 @@ MCP Server for Kingdee K3Cloud (金蝶云星空) — one of the most widely used
 ## 操作步骤
 
 1. Fork https://github.com/punkpeye/awesome-mcp-servers
-2. 在 README.md 中找到 ERP / Business 分类，插入上述条目（按字母顺序 `k` 位置）
-3. Commit: `Add kingdee-k3cloud-mcp to ERP section`
-4. 开 PR，使用上述标题和描述
+2. 在 README.md 的 Workplace & Productivity 分类中插入上述条目
+3. Commit: `Add kingdee-k3cloud-mcp to Workplace & Productivity`
+4. 开 PR，并在标题末尾加 `🤖🤖🤖`，使用上述描述

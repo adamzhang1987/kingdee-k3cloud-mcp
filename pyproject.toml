@@ -1,12 +1,13 @@
 [project]
 name = "kingdee-k3cloud-mcp"
 version = "1.4.0"
-description = "MCP Server for Kingdee K3Cloud ERP — connect AI assistants to 金蝶云星空 via natural language"
+description = "金蝶 MCP Server for Kingdee K3Cloud ERP — connect AI assistants to 金蝶云星空 via natural language"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 authors = [{ name = "Adam Zhang", email = "adamzhang1987@gmail.com" }]
-keywords = ["mcp", "mcp-server", "kingdee", "金蝶", "k3cloud", "erp", "claude", "llm", "ai", "agent"]
+keywords = ["mcp", "mcp-server", "model-context-protocol", "kingdee", "kingdee-mcp",
+            "金蝶", "金蝶MCP", "金蝶云星空", "k3cloud", "erp", "claude", "llm", "ai", "agent"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -30,7 +31,8 @@ dependencies = [
 kingdee-k3cloud-mcp = "kingdee_k3cloud_mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/adamzhang1987/kingdee-k3cloud-mcp"
+Homepage = "https://adamzhang1987.github.io/kingdee-k3cloud-mcp/"
+Documentation = "https://adamzhang1987.github.io/kingdee-k3cloud-mcp/"
 Repository = "https://github.com/adamzhang1987/kingdee-k3cloud-mcp"
 Issues = "https://github.com/adamzhang1987/kingdee-k3cloud-mcp/issues"
 

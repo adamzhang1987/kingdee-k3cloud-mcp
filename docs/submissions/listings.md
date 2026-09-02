@@ -13,7 +13,7 @@ kingdee-k3cloud-mcp
 ## 中文简介（约 150 字）
 
 ```
-金蝶云星空 K3Cloud MCP Server。让 Claude Desktop、Cursor、Cline、Cherry Studio 等任意支持 MCP 协议的 AI 客户端，通过自然语言直接查询和操作金蝶 ERP 系统。
+金蝶 MCP Server（Kingdee K3Cloud MCP）面向金蝶云星空 ERP。让 Claude Desktop、Cursor、Cline、Cherry Studio 等任意支持 MCP 协议的 AI 客户端，通过自然语言直接查询和操作金蝶 ERP 系统。
 
 15 个 MCP 工具覆盖查询、大数据量导出、新增、提交、审核、反审核、下推等核心操作。通用接口设计——单一 form_id 参数支持销售订单、采购订单、库存、物料、客户、供应商等所有表单，无需逐单配置。内置自动翻页、流式落盘、日期分片三大高阶查询工具，彻底消除模型手动循环的负担。支持只读模式（防误操作），启动即校验凭据、认证失败给出可操作的修复指引，适合生产环境长期运行。
 ```
@@ -21,7 +21,7 @@ kingdee-k3cloud-mcp
 ## 英文简介（约 200 字）
 
 ```
-MCP Server for Kingdee K3Cloud (金蝶云星空) — one of China's most widely adopted ERP systems.
+Kingdee K3Cloud MCP Server (金蝶 MCP) for 金蝶云星空 — one of China's most widely adopted ERP systems.
 
 Connect any MCP-compatible AI assistant (Claude Desktop, Cursor, Cline, Cherry Studio, Openclaw, etc.) to your Kingdee ERP via natural language. Query bills, submit orders, audit documents, push down workflows, and bulk-export data — all without touching the Kingdee web interface.
 
@@ -44,6 +44,7 @@ Claude Code users can pair it with kingdee-k3cloud-skill for injected domain kno
 
 | 用途 | 链接 |
 |------|------|
+| 金蝶 MCP 官网 | https://adamzhang1987.github.io/kingdee-k3cloud-mcp/ |
 | GitHub | https://github.com/adamzhang1987/kingdee-k3cloud-mcp |
 | PyPI | https://pypi.org/project/kingdee-k3cloud-mcp/ |
 | 配套 Skill | https://github.com/adamzhang1987/kingdee-k3cloud-skill |
