@@ -72,11 +72,33 @@ def _response_statuses(data) -> "Iterator[dict]":
         for item in data:
             yield from _response_statuses(item)
     elif isinstance(data, dict):
-        for container in (data.get("Result"), data):
-            if isinstance(container, dict):
-                status = container.get("ResponseStatus")
-                if isinstance(status, dict):
-                    yield status
+        status = data.get("ResponseStatus")
+        if isinstance(status, dict):
+            yield status
+        result = data.get("Result")
+        # Result 可能是 dict，也可能是 list（再套一层单据结果），两者都要下钻
+        if isinstance(result, (dict, list)):
+            yield from _response_statuses(result)
+
+
+def _as_msg_code(value) -> "int | None":
+    """把 MsgCode 归一成 int。
+
+    实测本部署返回的是数字 1，但不同版本/网关可能序列化成字符串 "1"。
+    若不归一，字符串形态会同时躲过 MsgCode 判据**和**消息串兜底
+    （因为兜底只在 MsgCode 缺失时才生效），认证失败就会被漏检。
+    布尔值不算错误码——`True == 1` 在 Python 中成立，必须排除。
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
 
 
 def _check_auth_failure(data) -> bool:
@@ -91,7 +113,7 @@ def _check_auth_failure(data) -> bool:
         return True  # 已经是本模块生成的 envelope
 
     for status in _response_statuses(data):
-        msg_code = status.get("MsgCode")
+        msg_code = _as_msg_code(status.get("MsgCode"))
         if msg_code == AUTH_FAIL_MSG_CODE:
             return True
         if msg_code is not None:

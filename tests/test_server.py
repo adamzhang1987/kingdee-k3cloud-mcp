@@ -9,6 +9,7 @@ from k3cloud_webapi_sdk.main import K3CloudApiSdk
 import kingdee_k3cloud_mcp.server as _server_mod
 from kingdee_k3cloud_mcp.server import (
     AUTH_ERROR_KEY,
+    AUTH_FAIL_MSG,
     DiagnosticK3CloudApiSdk,
     _auth_error_envelope,
     _check_auth_failure,
@@ -175,6 +176,47 @@ class TestCheckAuthFailure(unittest.TestCase):
         for raw in MALFORMED_RESPONSES:
             result = _is_auth_failure(raw)
             self.assertIsInstance(result, bool, raw)
+
+    def test_string_msg_code_still_detected(self):
+        """MsgCode 若被序列化成字符串 "1"，不能同时躲过错误码判据和消息串兜底。"""
+        raw = json.dumps(
+            [
+                [
+                    {
+                        "Result": {
+                            "ResponseStatus": {
+                                "MsgCode": "1",
+                                "Errors": [{"Message": AUTH_FAIL_MSG}],
+                            }
+                        }
+                    }
+                ]
+            ]
+        )
+        self.assertTrue(_is_auth_failure(raw))
+
+    def test_string_business_msg_code_not_flagged(self):
+        """字符串形态的业务错误码同样不得被误判。"""
+        raw = json.dumps(
+            [
+                [
+                    {
+                        "Result": {
+                            "ResponseStatus": {
+                                "MsgCode": "4",
+                                "Errors": [{"Message": AUTH_FAIL_MSG}],
+                            }
+                        }
+                    }
+                ]
+            ]
+        )
+        self.assertFalse(_is_auth_failure(raw))
+
+    def test_result_as_list_is_traversed(self):
+        """Result 为列表时也要下钻到其中的 ResponseStatus。"""
+        raw = json.dumps({"Result": [{"ResponseStatus": {"MsgCode": 1}}]})
+        self.assertTrue(_is_auth_failure(raw))
 
     def test_envelope_recognised(self):
         """已包装的 envelope 仍应被识别为认证失败（供各调用点提前返回）。"""
