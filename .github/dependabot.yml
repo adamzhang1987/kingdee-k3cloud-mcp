@@ -1,10 +1,15 @@
 version: 2
 updates:
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    ignore:
+      # mcp 2.x 把 FastMCP 改名为 MCPServer，是破坏性变更，需要单独迁移，
+      # 不能靠 Dependabot 自动升级；参见 CI 的 deps-range 任务。
+      - dependency-name: "mcp"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

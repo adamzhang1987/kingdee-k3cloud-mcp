@@ -1,6 +1,6 @@
 [project]
 name = "kingdee-k3cloud-mcp"
-version = "1.4.0"
+version = "1.4.1"
 description = "金蝶MCP Server for Kingdee K3Cloud ERP — connect AI assistants to 金蝶云星空 via natural language"
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -24,7 +24,7 @@ classifiers = [
 dependencies = [
     "kingdee-cdp-webapi-sdk>=8.2.0,<9.0.0",
     "mcp>=1.26.0,<2",
-    "python-dotenv>=1.2.1,<2",
+    "python-dotenv>=1.2.3,<2",
 ]
 
 [project.scripts]
@@ -47,9 +47,9 @@ artifacts = ["src/kingdee_k3cloud_mcp/py.typed"]
 [dependency-groups]
 dev = [
     "mcp[cli]>=1.26.0,<2",
-    "pytest>=9.0.2",
-    "pytest-cov>=5.0",
-    "pytest-mock>=3.14",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pytest-mock>=3.15.1",
     "ruff>=0.9",
     "mypy>=1.13",
 ]
