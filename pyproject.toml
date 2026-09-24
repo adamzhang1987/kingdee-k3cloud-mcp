@@ -46,7 +46,7 @@ artifacts = ["src/kingdee_k3cloud_mcp/py.typed"]
 
 [dependency-groups]
 dev = [
-    "mcp[cli]>=1.26.0,<2",
+    "mcp[cli]>=1.30.0,<2",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pytest-mock>=3.15.1",
