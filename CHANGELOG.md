@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 官网 FAQ 新增「金蝶MCP 是什么？和金蝶官方的 MCP 有什么关系？」，说明本项目是面向
   金蝶云星空（K3Cloud）的第三方开源实现，与金蝶官方苍穹 MCP 无隶属关系。
 
+## [1.4.1] - 2026-09-24
+
+### Changed
+- `python-dotenv` 下限提升到 `>=1.2.3`：修复 `.env` 文件带 UTF-8 BOM（部分 Windows 上的
+  JetBrains IDE 会写入）时第一个变量被静默丢失的问题。
+- 开发依赖 `pytest`、`pytest-cov`、`pytest-mock` 升级到各自最新的次版本，纯 CI/测试环境
+  变化，不影响已发布包的运行时行为。
+- `.github/dependabot.yml` 的 `package-ecosystem` 由 `pip` 改为 `uv`，此后 Dependabot 会
+  一并更新 `uv.lock`，避免约束与锁文件不一致。
+- CI 的 `Install dependencies` 步骤改用 `uv sync --locked`，锁文件与 `pyproject.toml`
+  不一致时直接失败，而不是静默重新解析。
+
 ## [1.4.0] - 2026-09-02
 
 ### Removed
@@ -130,7 +142,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI matrix (Python 3.10 / 3.11 / 3.12)
 - GitHub Actions release workflow with PyPI Trusted Publishing (OIDC)
 
-[Unreleased]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.3.0...v1.3.1
