@@ -3,9 +3,11 @@ import json
 import logging
 import os
 import sys
+import tempfile
 from collections.abc import Iterator
 from datetime import date, timedelta
 from pathlib import Path
+from typing import TextIO
 
 from dotenv import load_dotenv
 from k3cloud_webapi_sdk.const.const_define import InvokeMethod
@@ -34,6 +36,9 @@ _STARTUP_CHECK_TIMEOUT = 5.0
 # Write tools remain registered but return an error when this flag is set.
 _readonly = False
 
+# Initialized once after .env is loaded. Only the operator chooses this directory.
+_export_dir: Path | None = None
+
 # SDK instance: initialized in setup() after environment is validated.
 api_sdk: "DiagnosticK3CloudApiSdk | None" = None
 
@@ -60,6 +65,66 @@ class ApiKeyVerifier:
 
 
 mcp = FastMCP("kingdee-k3cloud")
+
+
+def _init_export_dir() -> None:
+    """Choose and validate the export directory once per server instance.
+
+    mkdtemp deliberately has no automatic cleanup: callers may read exports after
+    the server exits. Configured directories and their parents are operator-managed.
+    """
+    global _export_dir
+    if _export_dir is not None:
+        return
+    try:
+        configured = os.getenv("KD_EXPORT_DIR", "")
+        if configured:
+            directory = Path(configured)
+            if not directory.is_absolute():
+                raise ValueError("必须是已存在、可写的绝对目录")
+            directory = directory.resolve(strict=True)
+            if not directory.is_dir():
+                raise ValueError("必须是目录")
+            # A real write probe also detects ACL/read-only mount failures that
+            # os.access alone cannot reliably predict. The probe is removed on close.
+            with tempfile.TemporaryFile(dir=directory) as probe:
+                probe.write(b"export directory check")
+                probe.flush()
+        else:
+            directory = Path(tempfile.mkdtemp(prefix="kingdee-export-")).resolve()
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise RuntimeError(f"导出目录初始化失败 (KD_EXPORT_DIR): {exc}") from exc
+    _export_dir = directory
+    logger.info("[k3cloud] 导出目录: %s", directory)
+
+
+def _open_export_file(filename: str) -> tuple[Path, TextIO]:
+    """Create a new private file; never overwrite or follow an existing link.
+
+    Validate Windows syntax on every OS, so the tool contract is portable.
+    Only one filename component is accepted; no caller-controlled parents exist.
+    """
+    device = filename.split(".", 1)[0].rstrip(" ").upper()
+    reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+    reserved.update(f"{prefix}{digit}" for prefix in ("COM", "LPT") for digit in "123456789¹²³")
+    if (
+        not filename
+        or filename in {".", ".."}
+        or any(ord(c) < 32 or c in '/\\:<>"|?*' for c in filename)
+        or filename.endswith((" ", "."))
+        or device in reserved
+    ):
+        raise ValueError("output_path 只能是普通文件名，如 orders.ndjson；不允许目录或特殊文件名")
+    if _export_dir is None:
+        raise ValueError("导出目录尚未初始化，请先调用 setup()")
+    path = _export_dir / filename
+
+    def private_opener(name: str, flags: int) -> int:
+        return os.open(name, flags, 0o600)
+
+    # 'x' translates to O_CREAT | O_EXCL: the existence check and creation are
+    # atomic, including for dangling symlinks and concurrent same-name calls.
+    return path, open(path, "x", encoding="utf-8", newline="", opener=private_opener)
 
 
 def _response_statuses(data) -> "Iterator[dict]":
@@ -576,7 +641,8 @@ def query_bill_to_file(
     """自动翻页并流式写入本地文件，适合大数据量导出（万行以上）。
 
     不在内存中累积数据，写入完成后返回文件路径和统计信息。
-    文件可用 Read 工具抽检，或交由 pandas/polars 处理。
+    仅接受文件名，保存到 KD_EXPORT_DIR 或本实例的独立临时目录，不覆盖已有文件。
+    使用返回的 path 通过 Read 工具抽检，或交由 pandas/polars 处理。
 
     返回格式：
         {"path": "...", "row_count": N, "bytes": M, "format": "ndjson"}
@@ -586,20 +652,17 @@ def query_bill_to_file(
         form_id: 表单ID。如 SAL_SaleOrder、PUR_PurchaseOrder、BD_MATERIAL 等
         field_keys: 查询字段，逗号分隔。如 "FBillNo,FDate,FAmount"
         filter_string: 过滤条件。如 "FDate >= '2025-01-01'"
-        output_path: 输出文件绝对路径。如 "/tmp/orders.ndjson"
+        output_path: 输出文件名，如 "orders.ndjson"；不可包含目录，不覆盖已有文件
         format: 输出格式，ndjson（每行一个 JSON 对象）或 csv，默认 ndjson
         page_size: 每页行数，默认 2000
         max_rows: 最大写入行数，默认 500000；超过则截断并正常返回
     """
-    if not output_path or not os.path.isabs(output_path):
-        return json.dumps({"error": "output_path 必须为非空绝对路径"}, ensure_ascii=False)
     if format not in {"ndjson", "csv"}:
         return json.dumps(
             {"error": f"format 必须是 ndjson 或 csv，收到: {format!r}"}, ensure_ascii=False
         )
-    parent = os.path.dirname(output_path)
-    if not os.path.isdir(parent):
-        return json.dumps({"error": f"目录不存在: {parent}"}, ensure_ascii=False)
+    if page_size <= 0 or max_rows <= 0:
+        return json.dumps({"error": "page_size 和 max_rows 必须大于 0"}, ensure_ascii=False)
 
     fields = [f.strip() for f in field_keys.split(",") if f.strip()]
     params = {
@@ -611,14 +674,16 @@ def query_bill_to_file(
     }
 
     try:
-        with open(output_path, "w", encoding="utf-8", newline="") as f:
+        path, handle = _open_export_file(output_path)
+        output_path = str(path)
+        with handle as f:
             rows_written, _, error_raw = _stream_to_file_handle(
                 f, params, page_size, max_rows, fields, format, False
             )
-    except OSError as e:
+            f.flush()
+            file_bytes = os.fstat(f.fileno()).st_size
+    except (OSError, ValueError) as e:
         return json.dumps({"error": f"文件写入失败: {e}"}, ensure_ascii=False)
-
-    file_bytes = os.path.getsize(output_path)
 
     if error_raw is not None:
         return json.dumps(
@@ -658,7 +723,8 @@ def query_bill_range(
 
     将 [date_from, date_to) 按 chunk 切成 N 段，每段独立翻页拉取。
     output_path 为空时内联返回（受 MCP 1 MB 限制，适合小跨度）；
-    非空时流式落盘，适合大跨度（年级）查询。
+    非空时只接受文件名，流式写入 KD_EXPORT_DIR 或本实例的独立临时目录，
+    不覆盖已有文件。使用返回的 path 读取文件，适合大跨度（年级）查询。
 
     返回格式（内联）：
         {"rows": [...], "row_count": N, "chunks": K, "exhausted": true}
@@ -674,7 +740,7 @@ def query_bill_range(
         date_to: 结束日期（不含），YYYY-MM-DD
         extra_filter: 额外过滤条件（与日期条件 AND 拼接）
         chunk: 切片粒度，month（默认）/ week / day
-        output_path: 落盘路径（绝对路径）。空=内联返回
+        output_path: 输出文件名，如 "orders.ndjson"；不可包含目录。空=内联返回
         page_size: 每页行数，默认 2000
     """
     try:
@@ -682,14 +748,10 @@ def query_bill_range(
     except ValueError as e:
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
-    inline_mode = not output_path
+    if page_size <= 0:
+        return json.dumps({"error": "page_size 必须大于 0"}, ensure_ascii=False)
 
-    if not inline_mode:
-        if not os.path.isabs(output_path):
-            return json.dumps({"error": "output_path 必须为绝对路径"}, ensure_ascii=False)
-        parent = os.path.dirname(output_path)
-        if not os.path.isdir(parent):
-            return json.dumps({"error": f"目录不存在: {parent}"}, ensure_ascii=False)
+    inline_mode = not output_path
 
     fields = [f.strip() for f in field_keys.split(",") if f.strip()]
 
@@ -724,7 +786,9 @@ def query_bill_range(
     total_count = 0
     error_raw = None
     try:
-        with open(output_path, "w", encoding="utf-8", newline="") as f:
+        path, handle = _open_export_file(output_path)
+        output_path = str(path)
+        with handle as f:
             header_written = False
             for chunk_from, chunk_to in chunks:
                 params = {
@@ -740,10 +804,10 @@ def query_bill_range(
                 total_count += rows_written
                 if error_raw is not None:
                     break
-    except OSError as e:
+            f.flush()
+            file_bytes = os.fstat(f.fileno()).st_size
+    except (OSError, ValueError) as e:
         return json.dumps({"error": f"文件写入失败: {e}"}, ensure_ascii=False)
-
-    file_bytes = os.path.getsize(output_path)
 
     if error_raw is not None:
         return json.dumps(
@@ -1031,6 +1095,8 @@ def setup() -> None:
     _missing_env = [k for k in _required_env if not os.getenv(k)]
     if _missing_env:
         raise RuntimeError(f"Missing required env vars: {', '.join(_missing_env)}")
+
+    _init_export_dir()
 
     api_key = os.getenv("MCP_API_KEY", "")
     if api_key:

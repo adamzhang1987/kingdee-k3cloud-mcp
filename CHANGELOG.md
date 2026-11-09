@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-11-10
+
+### Fixed
+- **Security / Issue #47**：修复 `query_bill_to_file` 和 `query_bill_range` 接受任意路径导致的
+  任意文件创建、覆盖和截断。两种工具共用文件名校验与原子独占创建，不覆盖已有文件、
+  硬链接或符号链接；POSIX 新文件权限为 `0600`。文件统计通过已打开的文件描述符获取。
+
+### Added
+- 可选 `KD_EXPORT_DIR`：指定已存在、可写的绝对导出目录；配置无效则启动失败。
+  未设置或为空时，每个服务实例使用系统临时目录下的独立私有目录（POSIX `0700`），
+  服务退出保留文件，重启使用新目录。实际目录记录到标准错误日志。
+- Windows Python 3.12 CI 检查，覆盖文件名限制和独占创建行为。
+
 ### Changed
+- **安全限制调整**：`output_path` 只接受文件名，不再接受绝对路径或相对子目录，也不允许覆盖。
+  从 1.4.1 及更早版本升级时将目录移至 `KD_EXPORT_DIR` 配置，调用只传文件名，并读取返回的绝对 `path`。
+  `query_bill_range(output_path="")` 仍为内联返回，查询失败仍保留部分导出。
+- 导出工具拒绝非正的 `page_size` / `max_rows`，在创建文件和调用 ERP 前返回错误。
+- 明确 `readonly` 禁止的是 ERP 写操作；受目录边界和禁止覆盖规则限制的导出仍然可用。
 - 优化“金蝶MCP”搜索可见性：统一 Pages、README、PyPI 元数据与目录提交文案中的产品名称
   （全站采用连写形式「金蝶MCP」，与中文查询词一致），并为官网补充 canonical、hreflang、
   `keywords`、社交分享标签、`SoftwareApplication` 与 `FAQPage` 结构化数据和 sitemap.xml；
@@ -142,7 +160,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI matrix (Python 3.10 / 3.11 / 3.12)
 - GitHub Actions release workflow with PyPI Trusted Publishing (OIDC)
 
-[Unreleased]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/adamzhang1987/kingdee-k3cloud-mcp/compare/v1.3.1...v1.3.2

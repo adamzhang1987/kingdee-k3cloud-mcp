@@ -110,6 +110,7 @@ cp .env.example .env
 | `KD_APP_SEC` | 应用密钥 | `your_app_secret` |
 | `KD_LCID` | 语言（默认 2052 中文） | `2052` |
 | `KD_ORG_NUM` | 组织编码（可选） | |
+| `KD_EXPORT_DIR` | 导出目录（可选，已存在且可写的绝对目录；默认使用独立系统临时目录） | `/srv/kingdee-exports` |
 | `KD_STARTUP_CHECK` | 启动时是否校验凭据（默认开启，`0` 关闭） | `1` |
 | `KD_STARTUP_CHECK_TIMEOUT` | 启动自检的超时秒数（默认 5） | `5` |
 
@@ -279,6 +280,29 @@ FASTMCP_HOST=0.0.0.0 FASTMCP_PORT=8080 uvx kingdee-k3cloud-mcp --transport sse
 | `view_bill` | 查看单条记录完整详情 |
 | `query_metadata` | 查询表单字段结构（元数据） |
 
+### 文件导出与 1.4.2 升级说明
+
+`query_bill_to_file` 和 `query_bill_range` 的 `output_path` 只接受文件名，例如
+`销售订单.ndjson`，不接受完整路径或子目录。导出不会覆盖已有文件，重名时请换一个文件名。
+
+未配置 `KD_EXPORT_DIR` 或值为空时，服务在系统临时目录下创建本实例独有的
+`kingdee-export-随机串` 目录（POSIX 权限 `0700`，新导出文件 `0600`）。
+实际目录会记录到标准错误日志；读取结果时始终使用工具返回的绝对路径 `path`。
+服务退出不会删除导出文件，重启会创建新目录；系统可能清理临时目录，需要长期保存时请配置固定目录。
+
+固定目录由部署者提前创建并设置写入权限，然后在 `.env` 或 MCP 客户端的 `env` 中设置：
+
+```dotenv
+KD_EXPORT_DIR=/srv/kingdee-exports
+```
+
+该路径属于运行 MCP Server 的服务器或容器。服务启动时会验证目录，不存在、相对路径或不可写均会导致启动失败。
+配置仅在启动时读取，修改后需要重启。固定目录及父目录应由可信部署者管理，专用于导出；不防御拥有服务账户权限的本地进程。
+
+从 1.4.1 及更早版本升级：将原路径 `/srv/kingdee-exports/orders.ndjson` 的目录配置为 `KD_EXPORT_DIR`，
+调用改为 `output_path="orders.ndjson"`，并从返回的 `path` 读取文件。
+`query_bill_to_file` 支持 NDJSON 和 CSV；`query_bill_range` 落盘格式仍为 NDJSON，`output_path=""` 仍为内联返回。
+
 ### 写入工具（读写模式下可用）
 
 | 工具 | 说明 |
@@ -295,7 +319,8 @@ FASTMCP_HOST=0.0.0.0 FASTMCP_PORT=8080 uvx kingdee-k3cloud-mcp --transport sse
 
 ## 只读模式
 
-通过 `--mode readonly` 或 `MCP_MODE=readonly` 限制服务器只暴露 8 个查询工具，防止 AI 误操作写入数据。
+通过 `--mode readonly` 或 `MCP_MODE=readonly` 禁止 ERP 写入操作。
+8 个查询工具仍然可用，包括受上述目录和禁止覆盖规则限制的文件导出；只读模式不会禁止创建这些导出文件。
 
 ```json
 "args": ["kingdee-k3cloud-mcp", "--mode", "readonly"]
