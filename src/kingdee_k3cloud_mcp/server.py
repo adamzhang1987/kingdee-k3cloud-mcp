@@ -98,6 +98,52 @@ def _init_export_dir() -> None:
     logger.info("[k3cloud] 导出目录: %s", directory)
 
 
+def _exclusive_export_opener(name: str, flags: int) -> int:
+    """Atomically create a file without following the final path component."""
+    if sys.platform != "win32":
+        return os.open(name, flags, 0o600)
+
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    # Windows CRT O_EXCL follows dangling symlinks. Use CREATE_NEW with
+    # FILE_FLAG_OPEN_REPARSE_POINT to reject the link itself atomically.
+    # https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    create_file.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    handle = create_file(
+        name,
+        0x40000000,  # GENERIC_WRITE
+        0,  # No sharing while the export is being written.
+        None,  # Default ACL, non-inheritable handle.
+        1,  # CREATE_NEW
+        0x80 | 0x00200000,  # FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT
+        None,
+    )
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        # The CRT descriptor takes ownership; closing the Python file closes both.
+        return msvcrt.open_osfhandle(handle, os.O_BINARY | os.O_NOINHERIT)
+    except BaseException:
+        kernel32.CloseHandle(handle)
+        raise
+
+
 def _open_export_file(filename: str) -> tuple[Path, TextIO]:
     """Create a new private file; never overwrite or follow an existing link.
 
@@ -119,12 +165,7 @@ def _open_export_file(filename: str) -> tuple[Path, TextIO]:
         raise ValueError("导出目录尚未初始化，请先调用 setup()")
     path = _export_dir / filename
 
-    def private_opener(name: str, flags: int) -> int:
-        return os.open(name, flags, 0o600)
-
-    # 'x' translates to O_CREAT | O_EXCL: the existence check and creation are
-    # atomic, including for dangling symlinks and concurrent same-name calls.
-    return path, open(path, "x", encoding="utf-8", newline="", opener=private_opener)
+    return path, open(path, "x", encoding="utf-8", newline="", opener=_exclusive_export_opener)
 
 
 def _response_statuses(data) -> "Iterator[dict]":

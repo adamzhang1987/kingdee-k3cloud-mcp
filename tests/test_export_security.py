@@ -164,9 +164,32 @@ def test_uninitialized_directory_fails_closed(export, monkeypatch):
 
 def test_creation_failure_does_not_query(export):
     call, sdk = export
-    with patch.object(server.os, "open", side_effect=PermissionError("denied")):
+    with patch.object(server, "_exclusive_export_opener", side_effect=PermissionError("denied")):
         assert "error" in call("orders.ndjson")
     sdk.BillQuery.assert_not_called()
+
+
+def test_export_descriptor_is_not_inheritable():
+    _, handle = server._open_export_file("private.ndjson")
+    with handle:
+        assert not os.get_inheritable(handle.fileno())
+        handle.write("sentinel\n")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows native handle ownership")
+def test_windows_handle_closed_when_descriptor_conversion_fails(export, tmp_path, monkeypatch):
+    import msvcrt
+
+    call, sdk = export
+
+    def fail_conversion(*args):
+        raise OSError("descriptor conversion failed")
+
+    monkeypatch.setattr(msvcrt, "open_osfhandle", fail_conversion)
+    assert "error" in call("orders.ndjson")
+    sdk.BillQuery.assert_not_called()
+    # A leaked exclusive Windows handle would prevent this deletion.
+    (tmp_path / "orders.ndjson").unlink()
 
 
 @pytest.mark.parametrize("page_size", [0, -1])

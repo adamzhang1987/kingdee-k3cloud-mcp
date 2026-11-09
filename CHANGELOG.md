@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Security / Issue #47**：修复 `query_bill_to_file` 和 `query_bill_range` 接受任意路径导致的
   任意文件创建、覆盖和截断。两种工具共用文件名校验与原子独占创建，不覆盖已有文件、
   硬链接或符号链接；POSIX 新文件权限为 `0600`。文件统计通过已打开的文件描述符获取。
+  Windows 使用原生 `CREATE_NEW` 配合 `FILE_FLAG_OPEN_REPARSE_POINT`，避免 CRT 独占打开
+  仍会跟随悬空符号链接的问题；句柄转换失败时也确保释放资源。
 
 ### Added
 - 可选 `KD_EXPORT_DIR`：指定已存在、可写的绝对导出目录；配置无效则启动失败。
