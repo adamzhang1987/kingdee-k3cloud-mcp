@@ -626,7 +626,7 @@ wheels = [
 
 [[package]]
 name = "kingdee-k3cloud-mcp"
-version = "1.4.1"
+version = "1.4.2"
 source = { editable = "." }
 dependencies = [
     { name = "kingdee-cdp-webapi-sdk" },

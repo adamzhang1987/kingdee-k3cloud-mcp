@@ -108,6 +108,7 @@ cp .env.example .env
 | `KD_APP_SEC` | Application secret | `your_app_secret` |
 | `KD_LCID` | Language code (default 2052 = Simplified Chinese) | `2052` |
 | `KD_ORG_NUM` | Organization number (optional) | |
+| `KD_EXPORT_DIR` | Export directory (optional; existing writable absolute directory; defaults to a private system temporary directory) | `/srv/kingdee-exports` |
 
 > The Application ID and Secret must be obtained from the "Third-party System Login Authorization" section in the Kingdee K3Cloud admin console.
 
@@ -267,6 +268,36 @@ Enable Bearer Token authentication via the `MCP_API_KEY` environment variable.
 | `view_bill` | View complete details of a single record |
 | `query_metadata` | Query form field structure (metadata) |
 
+### File exports and upgrading to 1.4.2
+
+`query_bill_to_file` and `query_bill_range` accept only a filename in `output_path`,
+such as `orders.ndjson`, never a full path or subdirectory. Existing files cannot be
+overwritten; choose a different filename if it already exists.
+
+When `KD_EXPORT_DIR` is unset or empty, each server instance creates its own
+`kingdee-export-<random>` directory inside the system temporary directory (POSIX
+permissions: directory `0700`, new exports `0600`). The actual directory is logged
+to stderr. Always read exports using the absolute `path` returned by the tool.
+Exports remain after the server exits; restarting creates a new directory. The OS
+may clean temporary directories, so configure a fixed directory for long-term storage.
+
+Create a writable directory first, then set this in `.env` or the MCP client's `env`:
+
+```dotenv
+KD_EXPORT_DIR=/srv/kingdee-exports
+```
+
+The path is on the MCP server or inside its container. Invalid configuration
+(relative, missing, or unwritable directory) fails startup. Configuration is read
+once at startup; restart after changes. The fixed directory and its parents must be
+managed by trusted operators and dedicated to exports. This boundary does not defend
+against local processes with the server account's permissions.
+
+Migrating from 1.4.1 or earlier: for `/srv/kingdee-exports/orders.ndjson`, configure the directory
+as `KD_EXPORT_DIR`, pass `output_path="orders.ndjson"`, and use the returned `path`.
+`query_bill_to_file` still supports NDJSON and CSV; `query_bill_range` still exports
+NDJSON and returns inline results when `output_path=""`.
+
 ### Write Tools (available in read-write mode)
 
 | Tool | Description |
@@ -283,7 +314,9 @@ All tools accept a `form_id` parameter to target any form (materials, customers,
 
 ## Read-Only Mode
 
-Use `--mode readonly` or `MCP_MODE=readonly` to restrict the server to the 8 query tools, preventing accidental AI writes.
+Use `--mode readonly` or `MCP_MODE=readonly` to disable ERP write operations.
+All 8 query tools remain available, including file exports restricted to the export
+directory with no overwrites. Read-only mode permits creating these export files.
 
 ```json
 "args": ["kingdee-k3cloud-mcp", "--mode", "readonly"]

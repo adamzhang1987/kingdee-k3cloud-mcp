@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from k3cloud_webapi_sdk.main import K3CloudApiSdk
@@ -561,10 +562,13 @@ class TestQueryBillToFile(unittest.TestCase):
         self.assertIn("error", result)
 
     def test_invalid_format_rejected(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch.object(_server_mod, "_export_dir", Path(tmpdir).resolve()),
+        ):
             out = os.path.join(tmpdir, "out.txt")
             result = json.loads(
-                query_bill_to_file("SAL_SaleOrder", "FID", output_path=out, format="xml")
+                query_bill_to_file("SAL_SaleOrder", "FID", output_path=Path(out).name, format="xml")
             )
         self.assertIn("error", result)
 
@@ -579,11 +583,16 @@ class TestQueryBillToFile(unittest.TestCase):
     def test_ndjson_write_three_pages(self):
         """3 pages of 100 rows each → 300 ndjson lines, valid JSON on each line."""
         pages = [_make_page(100, 0), _make_page(100, 100), _make_page(100, 200), _make_page(0)]
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch.object(_server_mod, "_export_dir", Path(tmpdir).resolve()),
+        ):
             out = os.path.join(tmpdir, "out.ndjson")
             with _patch_sdk(pages):
                 result = json.loads(
-                    query_bill_to_file("SAL_SaleOrder", "FID,FName", output_path=out, page_size=100)
+                    query_bill_to_file(
+                        "SAL_SaleOrder", "FID,FName", output_path=Path(out).name, page_size=100
+                    )
                 )
             self.assertEqual(result["row_count"], 300)
             self.assertEqual(result["format"], "ndjson")
@@ -599,12 +608,19 @@ class TestQueryBillToFile(unittest.TestCase):
         import csv as _csv
 
         pages = [_make_page(50, 0), _make_page(50, 50), _make_page(0)]
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch.object(_server_mod, "_export_dir", Path(tmpdir).resolve()),
+        ):
             out = os.path.join(tmpdir, "out.csv")
             with _patch_sdk(pages):
                 result = json.loads(
                     query_bill_to_file(
-                        "SAL_SaleOrder", "FID,FName", output_path=out, format="csv", page_size=50
+                        "SAL_SaleOrder",
+                        "FID,FName",
+                        output_path=Path(out).name,
+                        format="csv",
+                        page_size=50,
                     )
                 )
             self.assertEqual(result["row_count"], 100)
@@ -617,11 +633,16 @@ class TestQueryBillToFile(unittest.TestCase):
     def test_session_expired_mid_write_returns_partial(self):
         """Session expiry after first page → error with partial row_count, file kept."""
         pages = [_make_page(10), EXPIRED_BILLQUERY]
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch.object(_server_mod, "_export_dir", Path(tmpdir).resolve()),
+        ):
             out = os.path.join(tmpdir, "out.ndjson")
             with _patch_sdk(pages):
                 result = json.loads(
-                    query_bill_to_file("SAL_SaleOrder", "FID", output_path=out, page_size=10)
+                    query_bill_to_file(
+                        "SAL_SaleOrder", "FID", output_path=Path(out).name, page_size=10
+                    )
                 )
             self.assertIn("error", result)
             self.assertEqual(result["row_count"], 10)
@@ -630,12 +651,19 @@ class TestQueryBillToFile(unittest.TestCase):
     def test_max_rows_respected(self):
         """max_rows=50 with two 100-row pages → exactly 50 rows written."""
         pages = [_make_page(100, 0), _make_page(100, 100)]
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch.object(_server_mod, "_export_dir", Path(tmpdir).resolve()),
+        ):
             out = os.path.join(tmpdir, "out.ndjson")
             with _patch_sdk(pages):
                 result = json.loads(
                     query_bill_to_file(
-                        "SAL_SaleOrder", "FID", output_path=out, page_size=100, max_rows=50
+                        "SAL_SaleOrder",
+                        "FID",
+                        output_path=Path(out).name,
+                        page_size=100,
+                        max_rows=50,
                     )
                 )
             self.assertEqual(result["row_count"], 50)
@@ -744,7 +772,10 @@ class TestQueryBillRange(unittest.TestCase):
     def test_file_mode_three_chunks_ndjson(self):
         """3 monthly chunks each with 10 rows → 30 lines in ndjson file, chunks=3."""
         pages = [_make_page(10)] * 3
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch.object(_server_mod, "_export_dir", Path(tmpdir).resolve()),
+        ):
             out = os.path.join(tmpdir, "range.ndjson")
             with _patch_sdk(pages):
                 result = json.loads(
@@ -754,7 +785,7 @@ class TestQueryBillRange(unittest.TestCase):
                         "FDate",
                         "2025-01-01",
                         "2025-04-01",
-                        output_path=out,
+                        output_path=Path(out).name,
                         page_size=2000,
                     )
                 )
@@ -781,7 +812,10 @@ class TestQueryBillRange(unittest.TestCase):
     def test_file_mode_session_expired_mid_chunk_returns_partial(self):
         """Session expires on second chunk → error returned, partial file kept."""
         pages = [_make_page(10), EXPIRED_BILLQUERY]
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch.object(_server_mod, "_export_dir", Path(tmpdir).resolve()),
+        ):
             out = os.path.join(tmpdir, "range.ndjson")
             with _patch_sdk(pages):
                 result = json.loads(
@@ -791,7 +825,7 @@ class TestQueryBillRange(unittest.TestCase):
                         "FDate",
                         "2025-01-01",
                         "2025-03-01",  # 2 chunks
-                        output_path=out,
+                        output_path=Path(out).name,
                         page_size=2000,
                     )
                 )
